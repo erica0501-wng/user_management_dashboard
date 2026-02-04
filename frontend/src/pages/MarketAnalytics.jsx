@@ -54,8 +54,17 @@ export default function MarketAnalytics() {
       interval === "1h" ? "1d" :
       interval === "1day" ? "1w" : "1m"
 
-    fetch(`http://localhost:3000/market/stocks?symbol=${symbol}&interval=${interval}&range=${range}`)
-      .then(res => res.json())
+    const token = localStorage.getItem("token")
+
+    fetch(`http://localhost:3000/market/stocks?symbol=${symbol}&interval=${interval}&range=${range}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Server returned ${res.status}`)
+        }
+        return res.json()
+      })
       .then(result => {
         const valid =
           Array.isArray(result?.dates) &&
@@ -71,7 +80,10 @@ export default function MarketAnalytics() {
         }
         setData(result)
       })
-      .catch(() => setError("Failed to load market data"))
+      .catch((err) => {
+        console.error("Market data fetch error:", err)
+        setError(`Failed to load market data: ${err.message}`)
+      })
   }, [symbol, interval])
 
   useEffect(() => {

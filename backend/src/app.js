@@ -44,3 +44,21 @@ app.use((err, req, res, next) => {
 })
 
 module.exports = app
+
+
+app.get('/', (req, res) => {
+  res.send('Express on Vercel is running!');
+});
+
+// 重點修改區域：
+const port = process.env.PORT || 3000;
+
+// 只有在本地開發時才監聽 Port，Vercel 環境下不需要
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+// 關鍵：必須匯出 app
+module.exports = app;

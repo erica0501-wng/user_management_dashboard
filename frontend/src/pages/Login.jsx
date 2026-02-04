@@ -19,8 +19,8 @@ export default function Login() {
     e.preventDefault()
     try {
       setError("")
-      await login({ email, password })
-      localStorage.setItem("token", "dummy") 
+      const response = await login({ email, password })
+      localStorage.setItem("token", response.token)
       window.location.href = "/"
     } catch (err) {
       setError(err.message || "Login failed")
@@ -37,11 +37,8 @@ export default function Login() {
       setError("")
       const response = await register({ email, password, username, age, gender })
       console.log("Register response:", response)
-      localStorage.setItem("token", "dummy")
-      // Use setTimeout to ensure token is saved before redirect
-      setTimeout(() => {
-        window.location.href = "/"
-      }, 100)
+      localStorage.setItem("token", response.token)
+      window.location.href = "/"
     } catch (err) {
       console.error("Register error:", err)
       setError(err.message || "Registration failed")
