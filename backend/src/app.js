@@ -13,6 +13,9 @@ require("dotenv").config()
 app.use(cors())                 
 app.use(express.json())
 
+// Favicon handler
+app.get('/favicon.ico', (req, res) => res.status(204).end())
+
 // Routes
 const marketRoutes = require("./routes/market")
 app.use("/market", marketRoutes)

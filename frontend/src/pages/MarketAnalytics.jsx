@@ -4,6 +4,7 @@ import { Chart } from "react-chartjs-2"
 import {
   Chart as ChartJS,
   BarController,
+  LineController,
   LinearScale,
   TimeScale,
   TimeSeriesScale,
@@ -26,6 +27,7 @@ import MarketTable from "../components/MarketTable"
 import ViewToggleBanner from "../components/ViewToggleBanner"
 ChartJS.register(
   BarController,
+  LineController,
   LinearScale,
   TimeScale,
   TimeSeriesScale,
