@@ -1,0 +1,47 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  email       String   @unique
+  age         Int?
+  gender      Gender?
+  createdAt  DateTime @default(now())
+  role        Role     @default(User)
+  status      Status   @default(Active)
+  joinedDate  DateTime @default(now())
+  lastActive  DateTime @default(now())
+  password     String?
+  provider     String   @default("local")
+  providerId   String?
+}
+
+enum Role {
+  Admin
+  User
+}
+
+enum Status {
+  Active
+  Inactive
+  Banned
+}
+
+enum Gender {
+  Male
+  Female
+}
+
+
+
+
+
+
+
