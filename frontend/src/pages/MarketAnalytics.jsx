@@ -57,8 +57,9 @@ export default function MarketAnalytics() {
       interval === "1day" ? "1w" : "1m"
 
     const token = localStorage.getItem("token")
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-    fetch(`http://localhost:3000/market/stocks?symbol=${symbol}&interval=${interval}&range=${range}`, {
+    fetch(`${apiUrl}/market/stocks?symbol=${symbol}&interval=${interval}&range=${range}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
       .then(res => {
@@ -89,7 +90,8 @@ export default function MarketAnalytics() {
   }, [symbol, interval])
 
   useEffect(() => {
-    fetch(`http://localhost:3000/market/stocks?symbol=${symbol}&interval=1day&range=1w`)
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+    fetch(`${apiUrl}/market/stocks?symbol=${symbol}&interval=1day&range=1w`)
       .then(res => res.json())
       .then(result => {
         if (Array.isArray(result?.prices)) {
