@@ -21,6 +21,7 @@ export default function Login() {
       setError("")
       const response = await login({ email, password })
       localStorage.setItem("token", response.token)
+      localStorage.setItem("user", JSON.stringify(response.user))
       window.location.href = "/"
     } catch (err) {
       setError(err.message || "Login failed")
@@ -38,6 +39,7 @@ export default function Login() {
       const response = await register({ email, password, username, age, gender })
       console.log("Register response:", response)
       localStorage.setItem("token", response.token)
+      localStorage.setItem("user", JSON.stringify(response.user))
       window.location.href = "/"
     } catch (err) {
       console.error("Register error:", err)

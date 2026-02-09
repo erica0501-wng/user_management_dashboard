@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
 import MarketAnalytics from "./pages/MarketAnalytics"
+import Watchlists from "./pages/Watchlists"
 
 export default function App() {
   const isLoggedIn = !!localStorage.getItem("token")
@@ -17,6 +18,11 @@ export default function App() {
         <Route
           path="/"
           element={isLoggedIn ? <MarketAnalytics /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/watchlists"
+          element={isLoggedIn ? <Watchlists /> : <Navigate to="/login" />}
         />
 
         <Route

@@ -1,15 +1,24 @@
-import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { useNavigate, useLocation } from "react-router-dom"
 
 export default function Sidebar() {
   const [active, setActive] = useState("dashboard")
   const navigate = useNavigate()
+  const location = useLocation()
 
   const items = [
     { id: "dashboard", label: "Homepage", path: "/" },
-    { id: "users", label: "Users Management", path: "/users" },
-    { id: "settings", label: "Settings", path: "/settings" },
+    { id: "watchlists", label: "Watchlists", path: "/watchlists" },
+    { id: "users", label: "Users Management", path: "/users" }
   ]
+
+  // Update active state based on current path
+  useEffect(() => {
+    const currentItem = items.find(item => item.path === location.pathname)
+    if (currentItem) {
+      setActive(currentItem.id)
+    }
+  }, [location.pathname])
 
   const handleNavigation = (item) => {
     setActive(item.id)
