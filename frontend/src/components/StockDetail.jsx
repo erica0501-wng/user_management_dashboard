@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import { Chart } from "react-chartjs-2"
 
-export default function StockDetail({ symbol, name, onBack }) {
+export default function StockDetail({ symbol, name, price, isInWatchlist, onToggleWatchlist, onBuy, onBack }) {
   const [interval, setInterval] = useState("1day")
   const [view, setView] = useState("chart")
   const [data, setData] = useState(null)
@@ -256,9 +256,58 @@ export default function StockDetail({ symbol, name, onBack }) {
       </button>
 
       {/* Header */}
-      <div className="mb-4">
-        <h2 className="text-3xl font-bold text-gray-800">{symbol}</h2>
-        <p className="text-gray-600">{name}</p>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-800">{symbol}</h2>
+          <p className="text-gray-600">{name}</p>
+        </div>
+        
+        {/* Action Buttons */}
+        <div className="flex gap-3 items-center">
+          {/* Buy Button - Dollar Icon */}
+          <button
+            onClick={() => onBuy && onBuy(symbol, currentPrice)}
+            className="hover:scale-110 transition-transform p-1"
+            title="Buy stock"
+          >
+            <svg 
+              width="32" 
+              height="32" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              className="text-gray-600 hover:text-green-600"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+              <path d="M12 18V6"></path>
+            </svg>
+          </button>
+
+          {/* Watchlist Button - Heart */}
+          <button
+            onClick={() => onToggleWatchlist && onToggleWatchlist(symbol)}
+            className="hover:scale-110 transition-transform p-1"
+            title={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+          >
+            <svg 
+              width="32" 
+              height="32" 
+              viewBox="0 0 24 24" 
+              fill={isInWatchlist ? "currentColor" : "none"}
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              className={isInWatchlist ? "text-red-500" : "text-gray-600 hover:text-red-500"}
+            >
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* KPI Blocks */}

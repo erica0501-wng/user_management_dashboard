@@ -66,12 +66,68 @@ router.get("/", async (req, res) => {
     const users = await prisma.user.findMany({
       where,
       orderBy: { joinedDate: "desc" },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        age: true,
+        gender: true,
+        createdAt: true,
+        role: true,
+        status: true,
+        joinedDate: true,
+        lastActive: true,
+        provider: true,
+        providerId: true,
+        // Exclude password
+      }
     })
 
     res.json(users)
   } catch (err) {
     console.error("GET /users error:", err)
     res.status(500).json({ error: "Failed to fetch users" })
+  }
+})
+
+/* =========================
+   GET single user by ID
+========================= */
+router.get("/:id", async (req, res) => {
+  const id = Number(req.params.id)
+
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "Invalid user id" })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        age: true,
+        gender: true,
+        createdAt: true,
+        role: true,
+        status: true,
+        joinedDate: true,
+        lastActive: true,
+        provider: true,
+        providerId: true,
+        // Exclude password
+      }
+    })
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" })
+    }
+
+    res.json(user)
+  } catch (err) {
+    console.error("GET /users/:id error:", err)
+    res.status(500).json({ error: "Failed to fetch user" })
   }
 })
 

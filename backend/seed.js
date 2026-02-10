@@ -10,28 +10,32 @@ async function main() {
   const users = await prisma.user.createMany({
     data: [
       {
-        username: "alice",
+        username: "Alice",
         email: "alice@gmail.com",
         password: hashedPassword,
         age: 30,
+        gender: "Female",
       },
       {
-        username: "bob",
+        username: "Bob",
         email: "bob@gmail.com",
         password: hashedPassword,
         age: 25,
+        gender: "Male",
       },
       {
-        username: "charlie",
+        username: "Charlie",
         email: "charlie@gmail.com",
         password: hashedPassword,
         age: 35,
+        gender: "Male",
       },
       {
-        username: "erica",
-        email: "erica@gmail.com",
+        username: "Erica",
+        email: "ericawong@gmail.com",
         password: hashedPassword,
         age: 28,
+        gender: "Female",
       },
     ],
   })

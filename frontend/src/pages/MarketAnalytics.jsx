@@ -25,6 +25,7 @@ import Sidebar from "../components/Sidebar"
 import GreetingBanner from "../components/GreetingBanner"
 import StockCard from "../components/StockCard"
 import StockDetail from "../components/StockDetail"
+import TradingPanel from "../components/TradingPanel"
 ChartJS.register(
   BarController,
   LineController,
@@ -53,15 +54,51 @@ export default function MarketAnalytics() {
   const [showFilterPanel, setShowFilterPanel] = useState(false) // 过滤面板显示状态
   const [priceRange, setPriceRange] = useState("all") // all, under100, 100to500, over500
   const [selectedCategories, setSelectedCategories] = useState([]) // 股票分类
+  const [showTradingPanel, setShowTradingPanel] = useState(false)
+  const [tradingStock, setTradingStock] = useState(null)
 
   // 股票列表
   const availableStocks = [
+    // Tech
     { symbol: "AAPL", name: "Apple Inc.", category: "Tech" },
-    { symbol: "TSLA", name: "Tesla Inc.", category: "Auto" },
     { symbol: "MSFT", name: "Microsoft Corp.", category: "Tech" },
     { symbol: "GOOGL", name: "Alphabet Inc.", category: "Tech" },
+    { symbol: "META", name: "Meta Platforms Inc.", category: "Tech" },
+    { symbol: "NVDA", name: "NVIDIA Corp.", category: "Tech" },
+    { symbol: "NFLX", name: "Netflix Inc.", category: "Tech" },
+    { symbol: "AMD", name: "Advanced Micro Devices", category: "Tech" },
+    { symbol: "ORCL", name: "Oracle Corp.", category: "Tech" },
+    { symbol: "INTC", name: "Intel Corp.", category: "Tech" },
+    { symbol: "ADBE", name: "Adobe Inc.", category: "Tech" },
+    
+    // Auto
+    { symbol: "TSLA", name: "Tesla Inc.", category: "Auto" },
+    { symbol: "F", name: "Ford Motor Co.", category: "Auto" },
+    { symbol: "GM", name: "General Motors Co.", category: "Auto" },
+    
+    // Retail
     { symbol: "AMZN", name: "Amazon.com Inc.", category: "Retail" },
-    { symbol: "META", name: "Meta Platforms Inc.", category: "Tech" }
+    { symbol: "WMT", name: "Walmart Inc.", category: "Retail" },
+    { symbol: "HD", name: "Home Depot Inc.", category: "Retail" },
+    { symbol: "TGT", name: "Target Corp.", category: "Retail" },
+    
+    // Finance
+    { symbol: "JPM", name: "JPMorgan Chase & Co.", category: "Finance" },
+    { symbol: "BAC", name: "Bank of America Corp.", category: "Finance" },
+    { symbol: "GS", name: "Goldman Sachs Group", category: "Finance" },
+    { symbol: "V", name: "Visa Inc.", category: "Finance" },
+    { symbol: "MA", name: "Mastercard Inc.", category: "Finance" },
+    
+    // Healthcare
+    { symbol: "JNJ", name: "Johnson & Johnson", category: "Healthcare" },
+    { symbol: "PFE", name: "Pfizer Inc.", category: "Healthcare" },
+    { symbol: "UNH", name: "UnitedHealth Group", category: "Healthcare" },
+    { symbol: "ABBV", name: "AbbVie Inc.", category: "Healthcare" },
+    
+    // Energy
+    { symbol: "XOM", name: "Exxon Mobil Corp.", category: "Energy" },
+    { symbol: "CVX", name: "Chevron Corp.", category: "Energy" },
+    { symbol: "COP", name: "ConocoPhillips", category: "Energy" }
   ]
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
@@ -91,9 +128,30 @@ export default function MarketAnalytics() {
     })
   }
 
-  // Handle buy stock
+  // Handle buy stock - Open trading panel
   const handleBuy = (symbol, price) => {
-    alert(`Buy order for ${symbol} at $${price?.toFixed(2) || '0.00'}\n\nThis is a demo feature. In production, this would open a trading interface.`)
+    const stock = stocksData.find(s => s.symbol === symbol)
+    if (stock) {
+      setTradingStock(stock)
+      setShowTradingPanel(true)
+    }
+  }
+
+  // Handle trade submission
+  const handleTrade = (tradeData) => {
+    const orders = JSON.parse(localStorage.getItem("orders") || "[]")
+    const newOrder = {
+      id: Date.now(),
+      ...tradeData,
+      status: "Pending",
+      time: new Date().toLocaleString(),
+      name: tradingStock.name
+    }
+    orders.unshift(newOrder)
+    localStorage.setItem("orders", JSON.stringify(orders))
+    
+    setShowTradingPanel(false)
+    alert(`${tradeData.direction} order placed for ${tradeData.quantity} shares of ${tradeData.symbol}`)
   }
 
   // 获取所有股票的当前价格
@@ -216,6 +274,10 @@ export default function MarketAnalytics() {
           <StockDetail
             symbol={selectedStock.symbol}
             name={selectedStock.name}
+            price={selectedStock.price}
+            isInWatchlist={watchlist.includes(selectedStock.symbol)}
+            onToggleWatchlist={toggleWatchlist}
+            onBuy={handleBuy}
             onBack={() => setSelectedStock(null)}
           />
         ) : (
@@ -368,6 +430,15 @@ export default function MarketAnalytics() {
           </>
         )}
       </div>
+
+      {/* Trading Panel Modal */}
+      {showTradingPanel && tradingStock && (
+        <TradingPanel
+          stock={tradingStock}
+          onClose={() => setShowTradingPanel(false)}
+          onTrade={handleTrade}
+        />
+      )}
     </div>
   )
 }

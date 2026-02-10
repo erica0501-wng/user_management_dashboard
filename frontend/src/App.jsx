@@ -3,6 +3,8 @@ import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
 import MarketAnalytics from "./pages/MarketAnalytics"
 import Watchlists from "./pages/Watchlists"
+import Portfolio from "./pages/Portfolio"
+import Trading from "./pages/Trading"
 
 export default function App() {
   const isLoggedIn = !!localStorage.getItem("token")
@@ -23,6 +25,16 @@ export default function App() {
         <Route
           path="/watchlists"
           element={isLoggedIn ? <Watchlists /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/portfolio"
+          element={isLoggedIn ? <Portfolio /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/trading"
+          element={isLoggedIn ? <Trading /> : <Navigate to="/login" />}
         />
 
         <Route
