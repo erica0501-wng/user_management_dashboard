@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  username       String          @unique
+  email          String          @unique
+  age            Int?
+  createdAt      DateTime        @default(now())
+  role           Role            @default(User)
+  status         Status          @default(Active)
+  joinedDate     DateTime        @default(now())
+  lastActive     DateTime        @default(now())
+  password       String?
+  provider       String          @default("local")
+  providerId     String?
+  gender         Gender?
+  orders         Order[]
+  accountBalance AccountBalance?
+}
+
+model Order {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    String
+  name      String?
+  direction OrderDirection
+  price     Float
+  quantity  Int
+  orderType String         @default("Limit")
+  session   String?
+  status    OrderStatus    @default(Pending)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model AccountBalance {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availableCash Float    @default(100000)
+  totalInvested Float    @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+enum Role {
+  Admin
+  User
+}
+
+enum Status {
+  Active
+  Inactive
+  Banned
+}
+
+enum Gender {
+  Male
+  Female
+}
+
+enum OrderDirection {
+  Buy
+  Sell
+}
+
+enum OrderStatus {
+  Pending
+  Filled
+  Cancelled
+}
