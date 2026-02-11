@@ -8,8 +8,8 @@
     "dev": "node src/server.js",
     "studio": "npx prisma studio --schema=./prisma/schema.local.prisma",
     "db:view": "node view-portfolio-database.js",
-    "build": "npx prisma generate --schema=./prisma/schema.vercel.prisma",
-    "postinstall": "npx prisma generate --schema=./prisma/schema.vercel.prisma",
+    "build": "npx prisma generate --schema=./prisma/archive/schema.vercel.prisma",
+    "postinstall": "npx prisma generate --schema=./prisma/archive/schema.vercel.prisma",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
