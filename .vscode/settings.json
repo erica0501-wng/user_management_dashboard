@@ -1,0 +1,13 @@
+{
+  "[prisma]": {
+    "editor.defaultFormatter": "Prisma.prisma"
+  },
+  "prisma.schemaPath": "backend/prisma/schema.local.prisma",
+  "files.exclude": {
+    "**/schema.prisma.backup": true
+  },
+  "search.exclude": {
+    "**/schema.prisma.backup": true,
+    "**/node_modules": true
+  }
+}

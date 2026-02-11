@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import StockDetail from "../components/StockDetail"
+import { createOrder, getHoldingsBySymbol } from "../services/portfolio"
 
 export default function Trading() {
   const location = useLocation()
@@ -14,6 +15,8 @@ export default function Trading() {
   const [orderType, setOrderType] = useState("Limit")
   const [session, setSession] = useState("RTH++Pre/Post-Mkt")
   const [timeInForce, setTimeInForce] = useState("Day")
+  const [holdings, setHoldings] = useState(0)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (stockData?.price) {
@@ -21,31 +24,76 @@ export default function Trading() {
     }
   }, [stockData])
 
-  const handleTrade = () => {
+  // Calculate holdings for the stock
+  useEffect(() => {
+    const loadHoldings = async () => {
+      if (!stockData) return
+      
+      try {
+        const holding = await getHoldingsBySymbol(stockData.symbol)
+        setHoldings(holding.quantity || 0)
+      } catch (err) {
+        console.error('Failed to load holdings:', err)
+        setHoldings(0)
+      }
+    }
+    
+    loadHoldings()
+  }, [stockData])
+
+  const handleTrade = async () => {
+    // Validate required fields
     if (!stockData || !tradePrice || !tradeQuantity) {
       alert("Please fill in all required fields")
       return
     }
 
-    const newOrder = {
-      id: Date.now(),
-      symbol: stockData.symbol,
-      name: stockData.name,
-      direction: tradeDirection,
-      price: tradePrice,
-      quantity: tradeQuantity,
-      orderType,
-      session,
-      status: "Pending",
-      time: new Date().toLocaleString()
+    // Validate price is positive
+    const price = parseFloat(tradePrice)
+    if (isNaN(price) || price <= 0) {
+      alert("Price must be a positive number")
+      return
     }
-    
-    const orders = JSON.parse(localStorage.getItem("orders") || "[]")
-    orders.unshift(newOrder)
-    localStorage.setItem("orders", JSON.stringify(orders))
-    
-    alert(`${tradeDirection} order placed for ${tradeQuantity} shares of ${stockData.symbol}`)
-    navigate("/portfolio")
+
+    // Validate quantity is positive integer
+    const quantity = parseInt(tradeQuantity)
+    if (isNaN(quantity) || quantity <= 0) {
+      alert("Quantity must be a positive number")
+      return
+    }
+
+    // Validate sell order - check holdings
+    if (tradeDirection === "Sell") {
+      if (holdings <= 0) {
+        alert(`You don't own any shares of ${stockData.symbol}. You must buy before selling.`)
+        return
+      }
+      if (quantity > holdings) {
+        alert(`Insufficient shares. You only have ${holdings} shares of ${stockData.symbol}, but trying to sell ${quantity}.`)
+        return
+      }
+    }
+
+    try {
+      setLoading(true)
+      await createOrder({
+        symbol: stockData.symbol,
+        name: stockData.name,
+        direction: tradeDirection,
+        price,
+        quantity,
+        orderType,
+        session
+      })
+      
+      alert(`${tradeDirection} order placed for ${quantity} shares of ${stockData.symbol}`)
+      navigate("/portfolio")
+    } catch (err) {
+      console.error('Failed to create order:', err)
+      alert(err.message || 'Failed to create order')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!stockData) {
@@ -204,18 +252,38 @@ export default function Trading() {
               <input
                 type="number"
                 value={tradePrice}
-                onChange={(e) => setTradePrice(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === '' || parseFloat(value) >= 0) {
+                    setTradePrice(value)
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = parseFloat(e.target.value)
+                  if (!isNaN(value) && value > 0) {
+                    setTradePrice(value.toFixed(2))
+                  } else {
+                    setTradePrice(stockData.price.toFixed(2))
+                  }
+                }}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
                 step="0.01"
+                min="0.01"
               />
               <button
-                onClick={() => setTradePrice(p => (parseFloat(p) - 0.01).toFixed(2))}
+                onClick={() => {
+                  const newPrice = Math.max(0.01, parseFloat(tradePrice) - 0.01)
+                  setTradePrice(newPrice.toFixed(2))
+                }}
                 className="w-10 h-10 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 −
               </button>
               <button
-                onClick={() => setTradePrice(p => (parseFloat(p) + 0.01).toFixed(2))}
+                onClick={() => {
+                  const newPrice = parseFloat(tradePrice) + 0.01
+                  setTradePrice(newPrice.toFixed(2))
+                }}
                 className="w-10 h-10 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 +
@@ -225,12 +293,30 @@ export default function Trading() {
 
           {/* Quantity */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Quantity
+              {tradeDirection === "Sell" && holdings > 0 && (
+                <span className="ml-2 text-xs text-gray-500">(Available: {holdings})</span>
+              )}
+            </label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 value={tradeQuantity}
-                onChange={(e) => setTradeQuantity(parseInt(e.target.value) || 1)}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value)
+                  if (!isNaN(value) && value > 0) {
+                    setTradeQuantity(value)
+                  } else if (e.target.value === '') {
+                    setTradeQuantity('')
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = parseInt(e.target.value)
+                  if (isNaN(value) || value < 1) {
+                    setTradeQuantity(1)
+                  }
+                }}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
                 min="1"
               />
@@ -275,14 +361,29 @@ export default function Trading() {
           {/* Submit Button */}
           <button
             onClick={handleTrade}
+            disabled={(tradeDirection === "Sell" && holdings <= 0) || loading}
             className={`w-full py-3 rounded-lg font-semibold text-white transition ${
               tradeDirection === "Buy"
-                ? "bg-green-500 hover:bg-green-600"
-                : "bg-red-500 hover:bg-red-600"
+                ? "bg-green-500 hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                : "bg-red-500 hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
             }`}
           >
-            {tradeDirection} {stockData.symbol}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                Processing...
+              </span>
+            ) : tradeDirection === "Sell" && holdings <= 0 ? (
+              `No ${stockData.symbol} to Sell`
+            ) : (
+              `${tradeDirection} ${stockData.symbol}`
+            )}
           </button>
+          {tradeDirection === "Sell" && holdings <= 0 && (
+            <p className="text-sm text-red-500 mt-2 text-center">
+              You must buy {stockData.symbol} before you can sell it.
+            </p>
+          )}
         </div>
       </div>
     </div>

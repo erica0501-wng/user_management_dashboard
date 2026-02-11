@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { createOrder, getHoldingsBySymbol } from "../services/portfolio"
 
 export default function TradingPanel({ stock, onClose, onTrade }) {
   const [direction, setDirection] = useState("Buy")
@@ -7,20 +8,83 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
   const [quantity, setQuantity] = useState(1)
   const [session, setSession] = useState("RTH+Pre/Post-Mkt")
   const [timeInForce, setTimeInForce] = useState("Day")
+  const [holdings, setHoldings] = useState(0)
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  // Calculate holdings for the stock
+  useEffect(() => {
+    const loadHoldings = async () => {
+      if (!stock) return
+      
+      try {
+        const holding = await getHoldingsBySymbol(stock.symbol)
+        setHoldings(holding.quantity || 0)
+      } catch (err) {
+        console.error('Failed to load holdings:', err)
+        setHoldings(0)
+      }
+    }
+    
+    loadHoldings()
+  }, [stock])
+
+  useEffect(() => {
+    setError("")
+  }, [direction, quantity])
 
   const amount = (price * quantity).toFixed(2)
 
-  const handleTrade = () => {
-    onTrade({
-      symbol: stock.symbol,
-      direction,
-      orderType,
-      price,
-      quantity,
-      amount,
-      session,
-      timeInForce
-    })
+  const handleTrade = async () => {
+    // Validate price
+    const priceValue = parseFloat(price)
+    if (isNaN(priceValue) || priceValue <= 0) {
+      setError("Price must be a positive number")
+      return
+    }
+
+    // Validate quantity
+    const quantityValue = parseInt(quantity)
+    if (isNaN(quantityValue) || quantityValue <= 0) {
+      setError("Quantity must be a positive number")
+      return
+    }
+
+    // Validate sell order - check holdings
+    if (direction === "Sell") {
+      if (holdings <= 0) {
+        setError(`You don't own any shares of ${stock.symbol}. You must buy before selling.`)
+        return
+      }
+      if (quantityValue > holdings) {
+        setError(`Insufficient shares. You only have ${holdings} shares but trying to sell ${quantityValue}.`)
+        return
+      }
+    }
+
+    try {
+      setLoading(true)
+      setError("")
+      
+      await createOrder({
+        symbol: stock.symbol,
+        name: stock.name,
+        direction,
+        price: priceValue,
+        quantity: quantityValue,
+        orderType,
+        session
+      })
+      
+      alert(`${direction} order placed for ${quantityValue} shares of ${stock.symbol}`)
+      onClose()
+      if (onTrade) onTrade()
+    } catch (err) {
+      console.error('Failed to create order:', err)
+      setError(err.message || 'Failed to create order')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -66,15 +130,19 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
               </button>
               <button
                 onClick={() => setDirection("Sell")}
+                disabled={holdings <= 0}
                 className={`flex-1 py-2 rounded-lg font-semibold transition ${
                   direction === "Sell"
                     ? "bg-red-500 text-white"
                     : "bg-white text-gray-600 border border-gray-200"
-                }`}
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 Sell
               </button>
             </div>
+            {holdings <= 0 && (
+              <p className="text-xs text-red-500 mt-1">No shares to sell</p>
+            )}
           </div>
 
           {/* Session */}
@@ -113,18 +181,38 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
               <input
                 type="number"
                 value={price}
-                onChange={(e) => setPrice(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === '' || parseFloat(value) >= 0) {
+                    setPrice(value)
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = parseFloat(e.target.value)
+                  if (!isNaN(value) && value > 0) {
+                    setPrice(value)
+                  } else {
+                    setPrice(stock?.price || 0)
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-gray-200 rounded-lg"
                 step="0.01"
+                min="0.01"
               />
               <button
-                onClick={() => setPrice(price - 1)}
+                onClick={() => {
+                  const newPrice = Math.max(0.01, parseFloat(price) - 1)
+                  setPrice(newPrice)
+                }}
                 className="w-10 h-10 border border-gray-200 rounded-lg hover:bg-gray-100"
               >
                 −
               </button>
               <button
-                onClick={() => setPrice(price + 1)}
+                onClick={() => {
+                  const newPrice = parseFloat(price) + 1
+                  setPrice(newPrice)
+                }}
                 className="w-10 h-10 border border-gray-200 rounded-lg hover:bg-gray-100"
               >
                 +
@@ -134,12 +222,30 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
 
           {/* Quantity */}
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-600 mb-2">Quantity</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-2">
+              Quantity
+              {direction === "Sell" && holdings > 0 && (
+                <span className="ml-2 text-xs text-gray-500">(Available: {holdings})</span>
+              )}
+            </label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value)
+                  if (!isNaN(value) && value > 0) {
+                    setQuantity(value)
+                  } else if (e.target.value === '') {
+                    setQuantity('')
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = parseInt(e.target.value)
+                  if (isNaN(value) || value < 1) {
+                    setQuantity(1)
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-gray-200 rounded-lg"
                 min="1"
               />
@@ -182,15 +288,30 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
           </div>
 
           {/* Buy/Sell Button */}
+          {error && (
+            <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          )}
           <button
             onClick={handleTrade}
+            disabled={(direction === "Sell" && holdings <= 0) || loading}
             className={`w-full py-3 rounded-lg font-bold text-white text-lg transition ${
               direction === "Buy"
                 ? "bg-green-500 hover:bg-green-600"
                 : "bg-red-500 hover:bg-red-600"
-            }`}
+            } disabled:bg-gray-400 disabled:cursor-not-allowed`}
           >
-            {direction} {stock.symbol}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                Processing...
+              </span>
+            ) : direction === "Sell" && holdings <= 0 ? (
+              `No ${stock.symbol} to Sell`
+            ) : (
+              `${direction} ${stock.symbol}`
+            )}
           </button>
         </div>
       </div>

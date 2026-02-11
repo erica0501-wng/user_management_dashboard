@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>View Portfolio Data</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .warning {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      color: #856404;
+    }
+    .section {
+      margin: 30px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #007bff;
+    }
+    h2 {
+      color: #007bff;
+      margin-top: 0;
+    }
+    pre {
+      background: #282c34;
+      color: #abb2bf;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+    }
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 10px 10px 0;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .export {
+      background: #28a745;
+    }
+    .export:hover {
+      background: #218838;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .status-pending {
+      color: #ffc107;
+      font-weight: 600;
+    }
+    .status-filled {
+      color: #28a745;
+      font-weight: 600;
+    }
+    .status-cancelled {
+      color: #6c757d;
+      font-weight: 600;
+    }
+    .buy {
+      color: #28a745;
+      font-weight: 600;
+    }
+    .sell {
+      color: #dc3545;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Portfolio Data Viewer</h1>
+    <p>查看存储在浏览器 localStorage 中的 Portfolio 数据</p>
+
+    <div class="warning" id="warning">
+      ⚠️ 如果看不到数据，请确保：
+      <ol>
+        <li>你已经在应用中进行过交易</li>
+        <li>使用相同的浏览器打开这个页面</li>
+        <li>在相同的域名/端口（如果从文件打开，需要复制到应用目录）</li>
+      </ol>
+    </div>
+
+    <button onclick="loadData()">🔄 刷新数据</button>
+    <button class="export" onclick="exportData()">💾 导出 JSON</button>
+    <button class="export" onclick="clearData()">🗑️ 清空数据</button>
+
+    <div class="section">
+      <h2>💰 账户信息</h2>
+      <div class="stats" id="accountStats">
+        <div class="stat-card">
+          <div class="stat-label">可用现金</div>
+          <div class="stat-value" id="availableCash">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">投资金额</div>
+          <div class="stat-value" id="totalInvested">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">总余额</div>
+          <div class="stat-value" id="totalBalance">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">购买力 (2x)</div>
+          <div class="stat-value" id="buyingPower">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📋 订单列表 (<span id="orderCount">0</span> 个)</h2>
+      <div id="ordersTable"></div>
+    </div>
+
+    <div class="section">
+      <h2>📦 持仓统计</h2>
+      <div id="holdingsTable"></div>
+    </div>
+
+    <div class="section">
+      <h2>💻 原始数据 (JSON)</h2>
+      <pre id="rawData">Loading...</pre>
+    </div>
+  </div>
+
+  <script>
+    function loadData() {
+      // Get orders
+      const ordersStr = localStorage.getItem('orders')
+      const orders = ordersStr ? JSON.parse(ordersStr) : []
+
+      // Get account balance
+      const balanceStr = localStorage.getItem('accountBalance')
+      const balance = balanceStr ? JSON.parse(balanceStr) : { availableCash: 0, totalInvested: 0 }
+
+      // Update account stats
+      document.getElementById('availableCash').textContent = `$${balance.availableCash.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+      document.getElementById('totalInvested').textContent = `$${balance.totalInvested.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+      const totalBalance = balance.availableCash + balance.totalInvested
+      document.getElementById('totalBalance').textContent = `$${totalBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+      const buyingPower = balance.availableCash * 2
+      document.getElementById('buyingPower').textContent = `$${buyingPower.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+
+      // Update order count
+      document.getElementById('orderCount').textContent = orders.length
+
+      // Display orders table
+      if (orders.length > 0) {
+        let tableHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th>状态</th>
+                <th>方向</th>
+                <th>股票</th>
+                <th>名称</th>
+                <th>价格</th>
+                <th>数量</th>
+                <th>总额</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+        `
+        orders.forEach(order => {
+          const statusClass = order.status === 'Pending' ? 'status-pending' : 
+                            order.status === 'Filled' ? 'status-filled' : 'status-cancelled'
+          const directionClass = order.direction === 'Buy' ? 'buy' : 'sell'
+          const total = (order.price * order.quantity).toFixed(2)
+          
+          tableHtml += `
+            <tr>
+              <td class="${statusClass}">${order.status}</td>
+              <td class="${directionClass}">${order.direction}</td>
+              <td><strong>${order.symbol}</strong></td>
+              <td>${order.name || '-'}</td>
+              <td>$${Number(order.price).toFixed(2)}</td>
+              <td>${order.quantity}</td>
+              <td>$${Number(total).toLocaleString()}</td>
+              <td style="font-size: 12px;">${order.time}</td>
+            </tr>
+          `
+        })
+        tableHtml += '</tbody></table>'
+        document.getElementById('ordersTable').innerHTML = tableHtml
+      } else {
+        document.getElementById('ordersTable').innerHTML = '<p style="color: #666;">没有订单数据</p>'
+      }
+
+      // Calculate holdings
+      const holdings = {}
+      orders.filter(o => o.status === 'Filled').forEach(order => {
+        if (!holdings[order.symbol]) {
+          holdings[order.symbol] = { symbol: order.symbol, name: order.name, quantity: 0, avgPrice: 0, totalCost: 0 }
+        }
+        if (order.direction === 'Buy') {
+          holdings[order.symbol].totalCost += order.price * order.quantity
+          holdings[order.symbol].quantity += order.quantity
+        } else {
+          holdings[order.symbol].quantity -= order.quantity
+        }
+      })
+
+      // Calculate average price
+      Object.keys(holdings).forEach(symbol => {
+        if (holdings[symbol].quantity > 0) {
+          holdings[symbol].avgPrice = holdings[symbol].totalCost / holdings[symbol].quantity
+        }
+      })
+
+      // Display holdings
+      const holdingsArray = Object.values(holdings).filter(h => h.quantity > 0)
+      if (holdingsArray.length > 0) {
+        let holdingsHtml = `
+          <table>
+            <thead>
+              <tr>
+                <th>股票</th>
+                <th>名称</th>
+                <th>持仓数量</th>
+                <th>平均成本</th>
+                <th>总成本</th>
+              </tr>
+            </thead>
+            <tbody>
+        `
+        holdingsArray.forEach(holding => {
+          holdingsHtml += `
+            <tr>
+              <td><strong>${holding.symbol}</strong></td>
+              <td>${holding.name || '-'}</td>
+              <td>${holding.quantity}</td>
+              <td>$${holding.avgPrice.toFixed(2)}</td>
+              <td>$${holding.totalCost.toFixed(2)}</td>
+            </tr>
+          `
+        })
+        holdingsHtml += '</tbody></table>'
+        document.getElementById('holdingsTable').innerHTML = holdingsHtml
+      } else {
+        document.getElementById('holdingsTable').innerHTML = '<p style="color: #666;">没有持仓</p>'
+      }
+
+      // Display raw JSON
+      const rawData = {
+        accountBalance: balance,
+        orders: orders,
+        holdings: holdingsArray
+      }
+      document.getElementById('rawData').textContent = JSON.stringify(rawData, null, 2)
+
+      // Hide warning if data exists
+      if (orders.length > 0) {
+        document.getElementById('warning').style.display = 'none'
+      }
+    }
+
+    function exportData() {
+      const ordersStr = localStorage.getItem('orders')
+      const balanceStr = localStorage.getItem('accountBalance')
+      
+      const data = {
+        accountBalance: balanceStr ? JSON.parse(balanceStr) : null,
+        orders: ordersStr ? JSON.parse(ordersStr) : []
+      }
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `portfolio-data-${new Date().toISOString().slice(0,10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      alert('数据已导出！')
+    }
+
+    function clearData() {
+      if (confirm('确定要清空所有 Portfolio 数据吗？此操作不可恢复！')) {
+        localStorage.removeItem('orders')
+        localStorage.removeItem('accountBalance')
+        alert('数据已清空！')
+        loadData()
+      }
+    }
+
+    // Load data on page load
+    loadData()
+  </script>
+</body>
+</html>

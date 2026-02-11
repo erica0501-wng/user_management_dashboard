@@ -1,10 +1,9 @@
-generator client {
-  provider = "prisma-client-js"
+datasource db {
+  provider = "postgresql"
 }
 
-datasource db {
-  provider = "sqlite"
-  url      = "file:./prisma/dev.db"
+generator client {
+  provider = "prisma-client-js"
 }
 
 model User {
@@ -26,19 +25,19 @@ model User {
 }
 
 model Order {
-  id        Int         @id @default(autoincrement())
+  id        Int            @id @default(autoincrement())
   userId    Int
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol    String
   name      String?
   direction OrderDirection
   price     Float
   quantity  Int
-  orderType String      @default("Limit")
+  orderType String         @default("Limit")
   session   String?
-  status    OrderStatus @default(Pending)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  status    OrderStatus    @default(Pending)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 }
 
 model AccountBalance {

@@ -138,20 +138,9 @@ export default function MarketAnalytics() {
   }
 
   // Handle trade submission
-  const handleTrade = (tradeData) => {
-    const orders = JSON.parse(localStorage.getItem("orders") || "[]")
-    const newOrder = {
-      id: Date.now(),
-      ...tradeData,
-      status: "Pending",
-      time: new Date().toLocaleString(),
-      name: tradingStock.name
-    }
-    orders.unshift(newOrder)
-    localStorage.setItem("orders", JSON.stringify(orders))
-    
+  const handleTrade = () => {
     setShowTradingPanel(false)
-    alert(`${tradeData.direction} order placed for ${tradeData.quantity} shares of ${tradeData.symbol}`)
+    // No need to do anything here, TradingPanel handles order creation
   }
 
   // 获取所有股票的当前价格

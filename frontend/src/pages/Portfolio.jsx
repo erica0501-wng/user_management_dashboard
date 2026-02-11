@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import Sidebar from "../components/Sidebar"
+import { getAccountBalance, getOrders, updateOrderStatus } from "../services/portfolio"
 
 export default function Portfolio() {
   const [activeTab, setActiveTab] = useState("orders")
@@ -12,26 +13,30 @@ export default function Portfolio() {
     availableCash: 100000,
     totalInvested: 0
   })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
-  // Load saved orders and balance from localStorage
+  // Load orders and balance from API
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const [balanceData, ordersData] = await Promise.all([
+        getAccountBalance(),
+        getOrders()
+      ])
+      setAccountBalance(balanceData)
+      setOrders(ordersData)
+    } catch (err) {
+      console.error('Failed to load portfolio data:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    const savedOrders = localStorage.getItem("orders")
-    if (savedOrders) {
-      setOrders(JSON.parse(savedOrders))
-    }
-
-    const savedBalance = localStorage.getItem("accountBalance")
-    if (savedBalance) {
-      setAccountBalance(JSON.parse(savedBalance))
-    } else {
-      // Initialize balance if not found
-      const initialBalance = {
-        availableCash: 100000,
-        totalInvested: 0
-      }
-      localStorage.setItem("accountBalance", JSON.stringify(initialBalance))
-      setAccountBalance(initialBalance)
-    }
+    loadData()
   }, [])
 
   // Auto-fill pending orders after random delay (3-8 seconds)
@@ -42,42 +47,27 @@ export default function Portfolio() {
 
     const timers = pendingOrders.map(order => {
       const randomDelay = Math.random() * 5000 + 3000 // 3-8 seconds
-      return setTimeout(() => {
-        setOrders(prevOrders => {
-          const updatedOrders = prevOrders.map(o =>
-            o.id === order.id ? { ...o, status: "Filled" } : o
-          )
-          localStorage.setItem("orders", JSON.stringify(updatedOrders))
-          return updatedOrders
-        })
-
-        // Update account balance when order is filled
-        setAccountBalance(prevBalance => {
-          const orderValue = order.price * order.quantity
-          const newBalance = {
-            ...prevBalance,
-            availableCash: order.direction === "Buy" 
-              ? prevBalance.availableCash - orderValue
-              : prevBalance.availableCash + orderValue,
-            totalInvested: order.direction === "Buy"
-              ? prevBalance.totalInvested + orderValue
-              : prevBalance.totalInvested - orderValue
-          }
-          localStorage.setItem("accountBalance", JSON.stringify(newBalance))
-          return newBalance
-        })
+      return setTimeout(async () => {
+        try {
+          await updateOrderStatus(order.id, "Filled")
+          loadData() // Reload all data
+        } catch (err) {
+          console.error('Failed to fill order:', err)
+        }
       }, randomDelay)
     })
 
     return () => timers.forEach(timer => clearTimeout(timer))
   }, [orders])
 
-  const cancelOrder = (orderId) => {
-    const updatedOrders = orders.map(order =>
-      order.id === orderId ? { ...order, status: "Cancelled" } : order
-    )
-    setOrders(updatedOrders)
-    localStorage.setItem("orders", JSON.stringify(updatedOrders))
+  const cancelOrder = async (orderId) => {
+    try {
+      await updateOrderStatus(orderId, "Cancelled")
+      loadData() // Reload data
+    } catch (err) {
+      console.error('Failed to cancel order:', err)
+      alert(err.message)
+    }
   }
 
   const tabs = [
@@ -93,7 +83,7 @@ export default function Portfolio() {
     // Date filtering
     let dateMatch = true
     if (startDate || endDate) {
-      const orderDate = new Date(order.time)
+      const orderDate = new Date(order.createdAt)
       if (startDate) {
         const start = new Date(startDate)
         start.setHours(0, 0, 0, 0)
@@ -112,6 +102,39 @@ export default function Portfolio() {
   // Calculate account values
   const totalBalance = accountBalance.availableCash + accountBalance.totalInvested
   const buyingPower = accountBalance.availableCash * 2 // 2x leverage
+
+  if (loading) {
+    return (
+      <div className="flex">
+        <Sidebar />
+        <div className="ml-64 flex-1 p-6 bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading portfolio...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex">
+        <Sidebar />
+        <div className="ml-64 flex-1 p-6 bg-gray-50">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-red-600">Error: {error}</p>
+            <button 
+              onClick={loadData}
+              className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex">
@@ -270,7 +293,9 @@ export default function Portfolio() {
                               <span className="text-gray-400 text-sm">—</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-sm text-gray-500">{order.time}</td>
+                          <td className="py-3 px-4 text-sm text-gray-500">
+                            {new Date(order.createdAt).toLocaleString()}
+                          </td>
                           <td className="py-3 px-4 text-sm text-gray-500">{order.orderType || "LMT"}</td>
                         </tr>
                       ))}
