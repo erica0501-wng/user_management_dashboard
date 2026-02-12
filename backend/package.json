@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "studio": "npx prisma studio --schema=./prisma/schema.local.prisma",
+    "studio": "npx prisma studio",
     "db:view": "node view-portfolio-database.js",
     "vercel-build": "npx prisma generate && npx prisma migrate deploy",
     "build": "npx prisma generate",

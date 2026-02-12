@@ -3,6 +3,13 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 // Get auth token
 const getToken = () => localStorage.getItem('token')
 
+// Helper to handle unauthorized responses
+const handleUnauthorized = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  window.location.href = '/login'
+}
+
 // Get account balance
 export const getAccountBalance = async () => {
   const token = getToken()
@@ -20,11 +27,43 @@ export const getAccountBalance = async () => {
   })
 
   console.log('📥 Balance response status:', response.status)
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
   
   if (!response.ok) {
     const errorText = await response.text()
     console.error('❌ Balance error response:', errorText)
     throw new Error('Failed to fetch balance')
+  }
+
+  return response.json()
+}
+
+// Top up balance
+export const topUpBalance = async (amount, paymentMethod) => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/portfolio/topup`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ amount, paymentMethod })
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Failed to top up balance')
   }
 
   return response.json()
@@ -44,6 +83,11 @@ export const getOrders = async (filters = {}) => {
       'Authorization': `Bearer ${token}`
     }
   })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
 
   if (!response.ok) {
     throw new Error('Failed to fetch orders')
@@ -66,6 +110,11 @@ export const createOrder = async (orderData) => {
     body: JSON.stringify(orderData)
   })
 
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
   if (!response.ok) {
     const error = await response.json()
     throw new Error(error.error || 'Failed to create order')
@@ -87,6 +136,11 @@ export const updateOrderStatus = async (orderId, status) => {
     },
     body: JSON.stringify({ status })
   })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
 
   if (!response.ok) {
     const error = await response.json()
@@ -118,4 +172,31 @@ export const getHoldings = async () => {
 export const getHoldingsBySymbol = async (symbol) => {
   const holdings = await getHoldings()
   return holdings.find(h => h.symbol === symbol) || { quantity: 0 }
+}
+
+// Run strategy backtest
+export const runStrategyBacktest = async (symbol, years) => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/portfolio/strategy-backtest`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ symbol, years })
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || 'Failed to run backtest')
+  }
+
+  return response.json()
 }

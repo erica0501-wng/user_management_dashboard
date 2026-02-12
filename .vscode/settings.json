@@ -2,12 +2,14 @@
   "[prisma]": {
     "editor.defaultFormatter": "Prisma.prisma"
   },
-  "prisma.schemaPath": "backend/prisma/schema.local.prisma",
+  "prisma.schemaPath": "backend/prisma/schema.prisma",
   "files.exclude": {
-    "**/schema.prisma.backup": true
+    "**/*.prisma.bak": true,
+    "**/archive/*.prisma*": true
   },
   "search.exclude": {
-    "**/schema.prisma.backup": true,
+    "**/*.prisma.bak": true,
+    "**/archive/*.prisma*": true,
     "**/node_modules": true
   }
 }

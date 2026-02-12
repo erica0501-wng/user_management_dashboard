@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { createOrder, getHoldingsBySymbol } from "../services/portfolio"
+import { createOrder, getHoldingsBySymbol, getAccountBalance } from "../services/portfolio"
 
 export default function TradingPanel({ stock, onClose, onTrade }) {
   const [direction, setDirection] = useState("Buy")
@@ -9,24 +9,30 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
   const [session, setSession] = useState("RTH+Pre/Post-Mkt")
   const [timeInForce, setTimeInForce] = useState("Day")
   const [holdings, setHoldings] = useState(0)
+  const [availableCash, setAvailableCash] = useState(0)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
-  // Calculate holdings for the stock
+  // Calculate holdings for the stock and get balance
   useEffect(() => {
-    const loadHoldings = async () => {
+    const loadData = async () => {
       if (!stock) return
       
       try {
-        const holding = await getHoldingsBySymbol(stock.symbol)
+        const [holding, balance] = await Promise.all([
+          getHoldingsBySymbol(stock.symbol),
+          getAccountBalance()
+        ])
         setHoldings(holding.quantity || 0)
+        setAvailableCash(balance.availableCash || 0)
       } catch (err) {
-        console.error('Failed to load holdings:', err)
-        setHoldings(0)
+        console.error('Failed to load portfolio data:', err)
+        // Even if holdings fail, we might want to let users try (backend will validate), 
+        // but let's just set defaults.
       }
     }
     
-    loadHoldings()
+    loadData()
   }, [stock])
 
   useEffect(() => {
@@ -58,6 +64,14 @@ export default function TradingPanel({ stock, onClose, onTrade }) {
       }
       if (quantityValue > holdings) {
         setError(`Insufficient shares. You only have ${holdings} shares but trying to sell ${quantityValue}.`)
+        return
+      }
+    }
+
+    // Validate buy order - check funds
+    if (direction === "Buy") {
+      if (parseFloat(amount) > availableCash) {
+        setError(`Insufficient funds. Cost: $${amount}, Available: $${availableCash.toFixed(2)}`)
         return
       }
     }

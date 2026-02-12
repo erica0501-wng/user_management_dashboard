@@ -7,32 +7,37 @@ const DEFAULT_PASSWORD = "password123"
 const DEFAULT_PASSWORD_HASH = bcrypt.hashSync(DEFAULT_PASSWORD, 10)
 
 router.post("/login", async (req, res) => {
-  const { email, password, username } = req.body
+  try {
+    const { email, password, username } = req.body
 
-  // Find user by email or username
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: email || "" },
-        { username: username || "" },
-      ],
-    },
-  })
+    // Find user by email or username
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email || "" },
+          { username: username || "" },
+        ],
+      },
+    })
 
-  if (!user || !user.password)
-    return res.status(401).json({ message: "Invalid credentials" })
+    if (!user || !user.password)
+      return res.status(401).json({ message: "Invalid credentials" })
 
-  const match = await bcrypt.compare(password, user.password)
-  if (!match)
-    return res.status(401).json({ message: "Invalid credentials" })
+    const match = await bcrypt.compare(password, user.password)
+    if (!match)
+      return res.status(401).json({ message: "Invalid credentials" })
 
-  const token = jwt.sign(
-    { id: user.id, role: user.role },
-    process.env.JWT_SECRET || "secret",
-    { expiresIn: "1d" }
-  )
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET || "secret",
+      { expiresIn: "1d" }
+    )
 
-  res.json({ token, user })
+    res.json({ token, user })
+  } catch (error) {
+    console.error("Login error:", error)
+    res.status(500).json({ message: "Login failed: " + error.message })
+  }
 })
 
 router.post("/register", async (req, res) => {
