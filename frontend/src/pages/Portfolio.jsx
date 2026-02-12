@@ -644,7 +644,7 @@ export default function Portfolio() {
                                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                             }`}
                           >
-                            📋 Table View
+                            Table View
                           </button>
                           <button
                             onClick={() => setTradeHistoryView("chart")}
@@ -654,7 +654,7 @@ export default function Portfolio() {
                                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                             }`}
                           >
-                            📈 Chart View
+                            Chart View
                           </button>
                         </div>
                       </div>
@@ -814,7 +814,7 @@ export default function Portfolio() {
                                       },
                                       title: {
                                         display: true,
-                                        text: '📅 Date (Time Period)',
+                                        text: 'Date (Time Period)',
                                         font: {
                                           size: 14,
                                           weight: 'bold'
@@ -829,7 +829,7 @@ export default function Portfolio() {
                                     y: {
                                       title: {
                                         display: true,
-                                        text: '💵 Stock Price (USD)',
+                                        text: 'Stock Price (USD)',
                                         font: {
                                           size: 14,
                                           weight: 'bold'
