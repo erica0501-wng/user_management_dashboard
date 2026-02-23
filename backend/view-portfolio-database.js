@@ -82,6 +82,36 @@ async function viewDatabase() {
       })
     }
 
+    // Get all transactions
+    const transactions = await prisma.transaction.findMany({
+      include: {
+        user: {
+          select: {
+            username: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+
+    console.log('💳 TRANSACTIONS (' + transactions.length + ' total):')
+    console.log('─────────────────────────────────────')
+    if (transactions.length === 0) {
+      console.log('   (No transactions yet)')
+    } else {
+      transactions.forEach(transaction => {
+        console.log(`Transaction #${transaction.id} - ${transaction.user.username}`)
+        console.log(`   Type: ${transaction.type} | Amount: $${transaction.amount.toFixed(2)}`)
+        if (transaction.paymentMethod) {
+          console.log(`   Payment Method: ${transaction.paymentMethod}`)
+        }
+        console.log(`   Created: ${transaction.createdAt.toLocaleString()}`)
+        console.log('')
+      })
+    }
+
     // Calculate holdings
     console.log('📦 HOLDINGS BY USER:')
     console.log('─────────────────────────────────────')
