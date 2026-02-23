@@ -76,6 +76,24 @@ export default function UserModal({ open, user, onClose, onSave }) {
         setError("Email must be a valid @gmail.com address")
         return
       }
+
+      // When creating new user, password is required
+      if (!form.password) {
+        setError("Password is required")
+        return
+      }
+
+      const passwordValidation = validatePassword(form.password)
+      if (!passwordValidation.valid) {
+        setError(passwordValidation.message)
+        return
+      }
+
+      const matchValidation = validatePasswordMatch(form.password, form.confirmPassword)
+      if (!matchValidation.valid) {
+        setError(matchValidation.message)
+        return
+      }
     }
 
     // When editing, validate password only if it's being changed
@@ -186,32 +204,30 @@ export default function UserModal({ open, user, onClose, onSave }) {
           <option value="Banned">Banned</option>
         </select>
 
-        {/* Password reset fields - only show when editing */}
-        {user && (
-          <div className="border-t pt-4 mt-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">
-              Reset Password (Optional)
-            </h3>
-            
-            <input
-              type="password"
-              name="password"
-              placeholder="New password (leave blank to keep current)"
-              value={form.password}
-              onChange={handleChange}
-              className="w-full border px-3 py-2 rounded mb-3"
-            />
+        {/* Password fields */}
+        <div className="border-t pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            {user ? "Reset Password (Optional)" : "Password (Required)"}
+          </h3>
+          
+          <input
+            type="password"
+            name="password"
+            placeholder={user ? "New password (leave blank to keep current)" : "Password"}
+            value={form.password}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded mb-3"
+          />
 
-            <input
-              type="password"
-              name="confirmPassword"
-              placeholder="Confirm new password"
-              value={form.confirmPassword}
-              onChange={handleChange}
-              className="w-full border px-3 py-2 rounded"
-            />
-          </div>
-        )}
+          <input
+            type="password"
+            name="confirmPassword"
+            placeholder="Confirm password"
+            value={form.confirmPassword}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+          />
+        </div>
       </div>
 
       {error && (

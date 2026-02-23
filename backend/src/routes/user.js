@@ -135,13 +135,19 @@ router.get("/:id", async (req, res) => {
    CREATE user
 ========================= */
 router.post("/", async (req, res) => {
-  const { username, email, age, role, status, gender } = req.body
+  const { username, email, age, role, status, gender, password } = req.body
 
   // required fields
   if (!username || !email) {
     return res
       .status(400)
       .json({ error: "Username and email are required" })
+  }
+
+  if (!password) {
+    return res
+      .status(400)
+      .json({ error: "Password is required" })
   }
 
   // validation
@@ -157,11 +163,26 @@ router.post("/", async (req, res) => {
     })
   }
 
+  // validate password
+  const hasLetter = /[A-Za-z]/.test(password)
+  const hasNumber = /[0-9]/.test(password)
+  
+  if (!hasLetter || !hasNumber) {
+    return res.status(400).json({
+      error: "Password must contain both letters and numbers",
+    })
+  }
+
   try {
+    // Hash password
+    const bcrypt = require("bcryptjs")
+    const hashedPassword = await bcrypt.hash(password, 10)
+
     const user = await prisma.user.create({
       data: {
         username,
         email: email.toLowerCase(),
+        password: hashedPassword,
         age: age ? Number(age) : null,
         role: role || "User",
         status: status || "Active",
