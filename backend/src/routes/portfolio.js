@@ -137,6 +137,7 @@ router.post('/withdraw', authenticateToken, async (req, res) => {
 
 // Get transaction history
 router.get('/transactions', authenticateToken, async (req, res) => {
+  console.log('📋 Fetching transactions for user:', req.user.id)
   try {
     const userId = req.user.id
 
@@ -145,6 +146,7 @@ router.get('/transactions', authenticateToken, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     })
 
+    console.log('✅ Found transactions:', transactions.length)
     res.json(transactions)
   } catch (error) {
     console.error('Get transactions error:', error)

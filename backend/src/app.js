@@ -33,10 +33,14 @@ app.get('/favicon.ico', (req, res) => res.status(204).end())
 
 // Routes
 const marketRoutes = require("./routes/market")
+const portfolioRoutes = require("./routes/portfolio")
+
+console.log('🔌 Loading portfolio routes...')
 app.use("/market", marketRoutes)
 app.use("/auth", require("./routes/auth"))
 app.use("/users", require("./routes/user"))
-app.use("/portfolio", require("./routes/portfolio"))
+app.use("/portfolio", portfolioRoutes)
+console.log('✅ Portfolio routes loaded')
 
 /* ========================
    Root Route
