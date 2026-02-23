@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import Sidebar from "../components/Sidebar"
 import Modal from "../components/Modal"
-import { getAccountBalance, getOrders, updateOrderStatus, topUpBalance, runStrategyBacktest } from "../services/portfolio"
+import { getAccountBalance, getOrders, updateOrderStatus, topUpBalance, withdrawBalance, getTransactions, runStrategyBacktest } from "../services/portfolio"
 import { Chart as ChartJS, CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import 'chartjs-adapter-date-fns'
@@ -38,6 +38,16 @@ export default function Portfolio() {
   const [topUpAmount, setTopUpAmount] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("credit_card")
   const [isProcessingTopUp, setIsProcessingTopUp] = useState(false)
+
+  // Withdraw Modal State
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false)
+  const [withdrawAmount, setWithdrawAmount] = useState("")
+  const [withdrawPaymentMethod, setWithdrawPaymentMethod] = useState("credit_card")
+  const [isProcessingWithdraw, setIsProcessingWithdraw] = useState(false)
+
+  // Transaction History State
+  const [transactions, setTransactions] = useState([])
+  const [showTransactions, setShowTransactions] = useState(false)
 
   // Strategy Backtest State
   const [backtestSymbol, setBacktestSymbol] = useState("AAPL")
@@ -99,12 +109,14 @@ export default function Portfolio() {
     try {
       setLoading(true)
       setError("")
-      const [balanceData, ordersData] = await Promise.all([
+      const [balanceData, ordersData, transactionsData] = await Promise.all([
         getAccountBalance(),
-        getOrders()
+        getOrders(),
+        getTransactions()
       ])
       setAccountBalance(balanceData)
       setOrders(ordersData)
+      setTransactions(transactionsData)
     } catch (err) {
       console.error('Failed to load portfolio data:', err)
       setError(err.message)
@@ -224,6 +236,80 @@ export default function Portfolio() {
     }
   }
 
+  // Withdraw state for card details
+  const [withdrawCardNumber, setWithdrawCardNumber] = useState("")
+  const [withdrawCardHolder, setWithdrawCardHolder] = useState("")
+  const [withdrawExpiry, setWithdrawExpiry] = useState("")
+  const [withdrawCvv, setWithdrawCvv] = useState("")
+
+  const handleWithdraw = async (e) => {
+    e.preventDefault()
+    
+    // Basic validations
+    if (!withdrawAmount || parseFloat(withdrawAmount) <= 0) {
+      alert("Please enter a valid amount")
+      return
+    }
+
+    if (!/^\d{16}$/.test(withdrawCardNumber.replace(/\s/g, ''))) {
+      alert("Please enter a valid 16-digit card number")
+      return
+    }
+
+    if (withdrawCardHolder.trim().length === 0) {
+      alert("Please enter the cardholder name")
+      return
+    }
+
+    if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(withdrawExpiry)) {
+      alert("Please enter a valid expiry date (MM/YY)")
+      return
+    }
+
+    if (!/^\d{3,4}$/.test(withdrawCvv)) {
+      alert("Please enter a valid 3 or 4 digit CVV")
+      return
+    }
+
+    try {
+      setIsProcessingWithdraw(true)
+      await withdrawBalance(parseFloat(withdrawAmount), withdrawPaymentMethod)
+      alert("Withdrawal successful!")
+      setShowWithdrawModal(false)
+      // Reset form
+      setWithdrawAmount("")
+      setWithdrawCardNumber("")
+      setWithdrawCardHolder("")
+      setWithdrawExpiry("")
+      setWithdrawCvv("")
+      loadData() // Reload balance
+    } catch (err) {
+      console.error('Failed to withdraw:', err)
+      alert(err.message)
+    } finally {
+      setIsProcessingWithdraw(false)
+    }
+  }
+
+  // Helper to format withdraw card number
+  const handleWithdrawCardNumberChange = (e) => {
+    const value = e.target.value.replace(/\D/g, '').substring(0, 16)
+    const formatted = value.match(/.{1,4}/g)?.join(' ') || value
+    setWithdrawCardNumber(formatted)
+  }
+
+  // Helper to format withdraw expiry
+  const handleWithdrawExpiryChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '')
+    if (value.length > 4) value = value.substring(0, 4)
+    
+    if (value.length >= 3) {
+      setWithdrawExpiry(`${value.substring(0, 2)}/${value.substring(2)}`)
+    } else {
+      setWithdrawExpiry(value)
+    }
+  }
+
   // Run strategy backtest
   const handleRunBacktest = async () => {
     try {
@@ -243,6 +329,7 @@ export default function Portfolio() {
 
   const tabs = [
     { id: "orders", label: "Orders" },
+    { id: "transactions", label: "Transactions" },
     { id: "analysis", label: "Analysis" }
   ]
 
@@ -315,15 +402,23 @@ export default function Portfolio() {
         
         {/* Funds Banner */}
         <div className="p-6 rounded-2xl bg-blue-50 mb-6 relative flex items-center">
-          <button 
-            onClick={() => setShowTopUpModal(true)}
-            className="absolute right-6 w-10 h-10 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-lg text-xl font-bold transition-all hover:scale-105"
-            title="Top Up Balance"
-            style={{ top: '50%', transform: 'translateY(-50%)' }}
-          >
-            +
-          </button>
-          <div className="grid grid-cols-3 gap-6 w-full pr-16">
+          <div className="absolute right-6 flex gap-3" style={{ top: '50%', transform: 'translateY(-50%)' }}>
+            <button 
+              onClick={() => setShowWithdrawModal(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg text-xl font-bold transition-all hover:scale-105"
+              title="Withdraw Balance"
+            >
+              -
+            </button>
+            <button 
+              onClick={() => setShowTopUpModal(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-lg text-xl font-bold transition-all hover:scale-105"
+              title="Top Up Balance"
+            >
+              +
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-6 w-full pr-28">
             <div className="flex flex-col">
               <p className="text-sm text-gray-600 mb-2">Total Balance</p>
               <p className="text-3xl font-bold text-gray-800">${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -476,6 +571,58 @@ export default function Portfolio() {
                             {new Date(order.createdAt).toLocaleString()}
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-500">{order.orderType || "LMT"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {activeTab === "transactions" && (
+              <div className="overflow-x-auto">
+                {transactions.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="text-lg mb-2">No transactions found</p>
+                    <p className="text-sm">Your top-up and withdrawal history will appear here</p>
+                  </div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Type</th>
+                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Amount</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Payment Method</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((transaction) => (
+                        <tr key={transaction.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
+                                transaction.type === "TopUp"
+                                  ? "bg-green-50 text-green-600"
+                                  : "bg-red-50 text-red-600"
+                              }`}
+                            >
+                              {transaction.type === "TopUp" ? "↑ Top Up" : "↓ Withdraw"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className={`font-mono font-semibold ${
+                              transaction.type === "TopUp" ? "text-green-600" : "text-red-600"
+                            }`}>
+                              {transaction.type === "TopUp" ? "+" : "-"}${Number(transaction.amount).toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-700 capitalize">
+                            {transaction.paymentMethod ? transaction.paymentMethod.replace('_', ' ') : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-500">
+                            {new Date(transaction.createdAt).toLocaleString()}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1031,6 +1178,126 @@ export default function Portfolio() {
                 className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50 transition"
               >
                 {isProcessingTopUp ? 'Processing...' : 'Confirm Top Up'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Modal>
+
+      <Modal open={showWithdrawModal} onClose={() => setShowWithdrawModal(false)}>
+        <div className="w-full max-w-sm">
+          <h2 className="text-xl font-bold mb-4 text-gray-800">Withdraw Balance</h2>
+          <form onSubmit={handleWithdraw}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="0.00"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Available: ${accountBalance.availableCash.toFixed(2)}
+              </p>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className={`flex items-center justify-center gap-2 border p-3 rounded-lg cursor-pointer transition text-center ${withdrawPaymentMethod === 'credit_card' ? 'border-red-500 bg-red-50 text-red-700 font-semibold' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                  <input 
+                    type="radio" 
+                    name="withdrawPaymentMethod" 
+                    value="credit_card"
+                    checked={withdrawPaymentMethod === 'credit_card'}
+                    onChange={(e) => setWithdrawPaymentMethod(e.target.value)}
+                    className="hidden"
+                  />
+                  <span>Credit Card</span>
+                </label>
+                <label className={`flex items-center justify-center gap-2 border p-3 rounded-lg cursor-pointer transition text-center ${withdrawPaymentMethod === 'debit_card' ? 'border-red-500 bg-red-50 text-red-700 font-semibold' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                  <input 
+                    type="radio" 
+                    name="withdrawPaymentMethod" 
+                    value="debit_card"
+                    checked={withdrawPaymentMethod === 'debit_card'}
+                    onChange={(e) => setWithdrawPaymentMethod(e.target.value)}
+                    className="hidden"
+                  />
+                  <span>Debit Card</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Card Details Section */}
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+               <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Card Number</label>
+                <input
+                  type="text"
+                  value={withdrawCardNumber}
+                  onChange={handleWithdrawCardNumberChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 tracking-wider"
+                  placeholder="0000 0000 0000 0000"
+                  maxLength="19"
+                />
+              </div>
+
+               <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Cardholder Name</label>
+                <input
+                  type="text"
+                  value={withdrawCardHolder}
+                  onChange={(e) => setWithdrawCardHolder(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 uppercase"
+                  placeholder="YOUR NAME"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                 <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Expiry Date</label>
+                  <input
+                    type="text"
+                    value={withdrawExpiry}
+                    onChange={handleWithdrawExpiryChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-center"
+                    placeholder="MM/YY"
+                    maxLength="5"
+                  />
+                </div>
+                 <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">CVV</label>
+                  <input
+                    type="text"
+                    value={withdrawCvv}
+                    onChange={(e) => setWithdrawCvv(e.target.value.replace(/\D/g, '').substring(0, 4))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-center"
+                    placeholder="123"
+                    maxLength="4"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowWithdrawModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isProcessingWithdraw}
+                className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm disabled:opacity-50 transition"
+              >
+                {isProcessingWithdraw ? 'Processing...' : 'Confirm Withdrawal'}
               </button>
             </div>
           </form>

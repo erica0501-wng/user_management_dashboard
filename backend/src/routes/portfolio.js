@@ -63,10 +63,92 @@ router.post('/topup', authenticateToken, async (req, res) => {
       }
     })
 
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'TopUp',
+        amount: parseFloat(amount),
+        paymentMethod
+      }
+    })
+
     res.json(updatedBalance)
   } catch (error) {
     console.error('Top up error:', error)
     res.status(500).json({ error: 'Failed to top up balance' })
+  }
+})
+
+// Withdraw from account balance
+router.post('/withdraw', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { amount, paymentMethod } = req.body
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be positive' })
+    }
+
+    if (!['credit_card', 'debit_card'].includes(paymentMethod)) {
+      return res.status(400).json({ error: 'Invalid payment method. Only Credit Card or Debit Card allowed.' })
+    }
+
+    // Get current balance
+    let balance = await prisma.accountBalance.findUnique({
+      where: { userId }
+    })
+
+    if (!balance) {
+      return res.status(400).json({ error: 'No balance found' })
+    }
+
+    // Check if sufficient funds
+    if (balance.availableCash < parseFloat(amount)) {
+      return res.status(400).json({ 
+        error: `Insufficient funds. Available: $${balance.availableCash.toFixed(2)}` 
+      })
+    }
+
+    // Update balance
+    const updatedBalance = await prisma.accountBalance.update({
+      where: { userId },
+      data: {
+        availableCash: { decrement: parseFloat(amount) }
+      }
+    })
+
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'Withdraw',
+        amount: parseFloat(amount),
+        paymentMethod
+      }
+    })
+
+    res.json(updatedBalance)
+  } catch (error) {
+    console.error('Withdraw error:', error)
+    res.status(500).json({ error: 'Failed to withdraw balance' })
+  }
+})
+
+// Get transaction history
+router.get('/transactions', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id
+
+    const transactions = await prisma.transaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(transactions)
+  } catch (error) {
+    console.error('Get transactions error:', error)
+    res.status(500).json({ error: 'Failed to get transactions' })
   }
 })
 

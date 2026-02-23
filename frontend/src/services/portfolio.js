@@ -69,6 +69,56 @@ export const topUpBalance = async (amount, paymentMethod) => {
   return response.json()
 }
 
+// Withdraw balance
+export const withdrawBalance = async (amount, paymentMethod) => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/portfolio/withdraw`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ amount, paymentMethod })
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || 'Failed to withdraw balance')
+  }
+
+  return response.json()
+}
+
+// Get transaction history
+export const getTransactions = async () => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/portfolio/transactions`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch transactions')
+  }
+
+  return response.json()
+}
+
 // Get all orders
 export const getOrders = async (filters = {}) => {
   const token = getToken()

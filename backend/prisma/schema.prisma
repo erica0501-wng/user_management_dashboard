@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -23,6 +23,7 @@ model User {
   gender         Gender?
   orders         Order[]
   accountBalance AccountBalance?
+  transactions   Transaction[]
 }
 
 model Order {
@@ -50,6 +51,16 @@ model AccountBalance {
   updatedAt     DateTime @updatedAt
 }
 
+model Transaction {
+  id            Int             @id @default(autoincrement())
+  userId        Int
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          TransactionType
+  amount        Float
+  paymentMethod String?
+  createdAt     DateTime        @default(now())
+}
+
 enum Role {
   Admin
   User
@@ -75,4 +86,9 @@ enum OrderStatus {
   Pending
   Filled
   Cancelled
+}
+
+enum TransactionType {
+  TopUp
+  Withdraw
 }
