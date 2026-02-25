@@ -96,9 +96,13 @@ export default function StockCard({
   )
 
   const handleWatchlistClick = (e) => {
+    console.log('❤️ Heart button clicked for:', symbol)
     e.stopPropagation() // 防止触发卡片的 onClick
     if (onToggleWatchlist) {
+      console.log('✅ Calling onToggleWatchlist')
       onToggleWatchlist(symbol)
+    } else {
+      console.log('❌ onToggleWatchlist is not defined')
     }
   }
 

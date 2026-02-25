@@ -24,6 +24,7 @@ model User {
   orders         Order[]
   accountBalance AccountBalance?
   transactions   Transaction[]
+  watchlists     Watchlist[]
 }
 
 model Order {
@@ -91,4 +92,14 @@ enum OrderStatus {
 enum TransactionType {
   TopUp
   Withdraw
+}
+
+model Watchlist {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, symbol])
 }

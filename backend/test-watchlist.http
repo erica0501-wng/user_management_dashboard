@@ -1,0 +1,33 @@
+### Test Watchlist API
+
+# Get watchlist (replace YOUR_TOKEN with actual token)
+GET http://localhost:3000/watchlist
+Authorization: Bearer YOUR_TOKEN
+
+###
+
+# Toggle watchlist
+POST http://localhost:3000/watchlist/toggle
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN
+
+{
+  "symbol": "AAPL"
+}
+
+###
+
+# Add to watchlist
+POST http://localhost:3000/watchlist
+Content-Type: application/json
+Authorization: Bearer YOUR_TOKEN
+
+{
+  "symbol": "MSFT"
+}
+
+###
+
+# Remove from watchlist
+DELETE http://localhost:3000/watchlist/AAPL
+Authorization: Bearer YOUR_TOKEN

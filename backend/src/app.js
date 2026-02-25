@@ -34,13 +34,17 @@ app.get('/favicon.ico', (req, res) => res.status(204).end())
 // Routes
 const marketRoutes = require("./routes/market")
 const portfolioRoutes = require("./routes/portfolio")
+console.log('📦 Loading watchlist routes...')
+const watchlistRoutes = require("./routes/watchlist")
+console.log('✅ Watchlist routes loaded successfully')
 
-console.log('🔌 Loading portfolio routes...')
+console.log('🔌 Loading all routes...')
 app.use("/market", marketRoutes)
 app.use("/auth", require("./routes/auth"))
 app.use("/users", require("./routes/user"))
 app.use("/portfolio", portfolioRoutes)
-console.log('✅ Portfolio routes loaded')
+app.use("/watchlist", watchlistRoutes)
+console.log('✅ All routes loaded')
 
 /* ========================
    Root Route

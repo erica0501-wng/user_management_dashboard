@@ -3,6 +3,7 @@ import Sidebar from "../components/Sidebar"
 import StockCard from "../components/StockCard"
 import StockDetail from "../components/StockDetail"
 import TradingPanel from "../components/TradingPanel"
+import { getWatchlist, toggleWatchlist as toggleWatchlistAPI } from "../services/watchlist"
 
 export default function Watchlists() {
   const [user, setUser] = useState(null)
@@ -21,17 +22,23 @@ export default function Watchlists() {
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
 
-  // Load user and watchlist from localStorage
+  // Load user and watchlist from database
   useEffect(() => {
     const userData = localStorage.getItem("user")
     if (userData) {
       setUser(JSON.parse(userData))
     }
     
-    const savedWatchlist = localStorage.getItem("watchlist")
-    if (savedWatchlist) {
-      setWatchlist(JSON.parse(savedWatchlist))
+    const loadWatchlist = async () => {
+      try {
+        const watchlistData = await getWatchlist()
+        setWatchlist(watchlistData)
+      } catch (error) {
+        console.error('Failed to load watchlist:', error)
+        setWatchlist([])
+      }
     }
+    loadWatchlist()
   }, [])
 
   // Fetch watchlist stocks data
@@ -140,16 +147,16 @@ export default function Watchlists() {
   }
 
   // Toggle watchlist
-  const toggleWatchlist = (symbol) => {
-    setWatchlist(prev => {
-      const newWatchlist = prev.filter(s => s !== symbol)
-      localStorage.setItem("watchlist", JSON.stringify(newWatchlist))
-      
+  const toggleWatchlist = async (symbol) => {
+    try {
+      const result = await toggleWatchlistAPI(symbol)
+      // Since we're on the watchlist page, we're removing items
+      setWatchlist(prev => prev.filter(s => s !== symbol))
       // Remove from displayed stocks
       setStocksData(prevStocks => prevStocks.filter(s => s.symbol !== symbol))
-      
-      return newWatchlist
-    })
+    } catch (error) {
+      console.error('Failed to toggle watchlist:', error)
+    }
   }
 
   // Handle buy stock - Open trading panel

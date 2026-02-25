@@ -26,6 +26,7 @@ import GreetingBanner from "../components/GreetingBanner"
 import StockCard from "../components/StockCard"
 import StockDetail from "../components/StockDetail"
 import TradingPanel from "../components/TradingPanel"
+import { getWatchlist, toggleWatchlist as toggleWatchlistAPI } from "../services/watchlist"
 ChartJS.register(
   BarController,
   LineController,
@@ -103,29 +104,45 @@ export default function MarketAnalytics() {
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
 
-  // Load user from localStorage
+  // Load user and watchlist
   useEffect(() => {
     const userData = localStorage.getItem("user")
     if (userData) {
       setUser(JSON.parse(userData))
     }
     
-    // Load watchlist from localStorage
-    const savedWatchlist = localStorage.getItem("watchlist")
-    if (savedWatchlist) {
-      setWatchlist(JSON.parse(savedWatchlist))
+    // Load watchlist from database
+    const loadWatchlist = async () => {
+      try {
+        const watchlistData = await getWatchlist()
+        setWatchlist(watchlistData)
+      } catch (error) {
+        console.error('Failed to load watchlist:', error)
+        setWatchlist([])
+      }
     }
+    loadWatchlist()
   }, [])
 
   // Toggle watchlist
-  const toggleWatchlist = (symbol) => {
-    setWatchlist(prev => {
-      const newWatchlist = prev.includes(symbol)
-        ? prev.filter(s => s !== symbol)
-        : [...prev, symbol]
-      localStorage.setItem("watchlist", JSON.stringify(newWatchlist))
-      return newWatchlist
-    })
+  const toggleWatchlist = async (symbol) => {
+    console.log('🔄 toggleWatchlist called with symbol:', symbol)
+    try {
+      console.log('📤 Calling API to toggle watchlist...')
+      const result = await toggleWatchlistAPI(symbol)
+      console.log('📥 API response:', result)
+      // Update local state based on action
+      if (result.action === 'added') {
+        console.log('✅ Added to watchlist')
+        setWatchlist(prev => [...prev, symbol])
+      } else {
+        console.log('❌ Removed from watchlist')
+        setWatchlist(prev => prev.filter(s => s !== symbol))
+      }
+    } catch (error) {
+      console.error('❌ Failed to toggle watchlist:', error)
+      alert('Failed to update watchlist. Please try again.')
+    }
   }
 
   // Handle buy stock - Open trading panel
