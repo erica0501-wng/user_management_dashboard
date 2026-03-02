@@ -10,6 +10,7 @@ export default function Sidebar() {
     { id: "dashboard", label: "Homepage", path: "/" },
     { id: "watchlists", label: "Watchlists", path: "/watchlists" },
     { id: "portfolio", label: "Portfolio", path: "/portfolio" },
+    { id: "community", label: "Community", path: "/community" },
     { id: "users", label: "Users Management", path: "/users" }
   ]
 

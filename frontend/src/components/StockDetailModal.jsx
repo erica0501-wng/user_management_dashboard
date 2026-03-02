@@ -48,7 +48,7 @@ export default function StockDetailModal({ symbol, name, onClose }) {
 
   if (!data) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-gray-900 bg-opacity-20 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-auto p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">{symbol} - {name}</h2>
@@ -249,7 +249,7 @@ export default function StockDetailModal({ symbol, name, onClose }) {
   )
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-20 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div 
         className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-auto p-6"
         onClick={(e) => e.stopPropagation()}

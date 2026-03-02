@@ -6,7 +6,7 @@ export default function Modal({ open, onClose, children }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.5)",
+        background: "rgba(107, 114, 128, 0.3)",
         zIndex: 999999,
         display: "flex",
         alignItems: "center",

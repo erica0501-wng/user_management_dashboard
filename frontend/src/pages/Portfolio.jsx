@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import Sidebar from "../components/Sidebar"
 import Modal from "../components/Modal"
 import { getAccountBalance, getOrders, updateOrderStatus, topUpBalance, withdrawBalance, getTransactions, runStrategyBacktest } from "../services/portfolio"
+import { exportPortfolio, exportOrders, exportTransactions, exportAccountSummary, exportAllData } from "../services/export"
 import { Chart as ChartJS, CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import 'chartjs-adapter-date-fns'
@@ -56,6 +57,10 @@ export default function Portfolio() {
   const [isRunningBacktest, setIsRunningBacktest] = useState(false)
   const [backtestError, setBacktestError] = useState("")
   const [tradeHistoryView, setTradeHistoryView] = useState("table") // "table" or "chart"
+  
+  // Export state
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportMenuRef = useRef(null)
   
   // Chart ref
   const chartRef = useRef(null)
@@ -128,6 +133,20 @@ export default function Portfolio() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false)
+      }
+    }
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showExportMenu])
 
   // Auto-fill pending orders after random delay (3-8 seconds)
   useEffect(() => {
@@ -398,7 +417,72 @@ export default function Portfolio() {
     <div className="flex">
       <Sidebar />
       <div className="ml-64 flex-1 p-6 bg-gray-50">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Portfolio</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Portfolio</h1>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
+            >
+              <span>📥</span>
+              Export Data
+              <span className="text-xs">▼</span>
+            </button>
+            
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-lg border z-50">
+                <div className="py-2">
+                  <button
+                    onClick={async () => {
+                      await exportPortfolio()
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
+                  >
+                    📊 Portfolio Holdings
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await exportOrders()
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
+                  >
+                    📝 Order History
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await exportTransactions()
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
+                  >
+                    💰 Transaction History
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await exportAccountSummary()
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
+                  >
+                    📋 Account Summary
+                  </button>
+                  <div className="border-t my-2"></div>
+                  <button
+                    onClick={async () => {
+                      await exportAllData()
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700 font-medium"
+                  >
+                    📦 Export All
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
         
         {/* Funds Banner */}
         <div className="p-6 rounded-2xl bg-blue-50 mb-6 relative flex items-center">

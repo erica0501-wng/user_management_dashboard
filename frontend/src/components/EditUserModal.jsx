@@ -54,7 +54,7 @@ export default function EditUserModal({ user, onClose, onSave }) {
   if (!user) return null
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-gray-900/20 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl w-full max-w-md p-6">
         <h2 className="text-lg font-semibold mb-4">Edit User</h2>
 

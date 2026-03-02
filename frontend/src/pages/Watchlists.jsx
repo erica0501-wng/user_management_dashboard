@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import StockCard from "../components/StockCard"
 import StockDetail from "../components/StockDetail"
 import TradingPanel from "../components/TradingPanel"
 import { getWatchlist, toggleWatchlist as toggleWatchlistAPI } from "../services/watchlist"
+import { exportWatchlist } from "../services/export"
+import CreateSharedWatchlistModal from "../components/CreateSharedWatchlistModal"
 
 export default function Watchlists() {
+  const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [watchlist, setWatchlist] = useState([])
   const [stocksData, setStocksData] = useState([])
@@ -19,6 +23,7 @@ export default function Watchlists() {
   const [sortBy, setSortBy] = useState("symbol") // symbol, price, change
   const [priceRange, setPriceRange] = useState("all") // all, under100, 100to500, over500
   const [selectedCategories, setSelectedCategories] = useState([]) // 股票分类
+  const [showShareModal, setShowShareModal] = useState(false)
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
 
@@ -174,6 +179,25 @@ export default function Watchlists() {
     // No need to do anything here, TradingPanel handles order creation
   }
 
+  // Handle export watchlist
+  const handleExport = async () => {
+    try {
+      await exportWatchlist()
+    } catch (error) {
+      console.error('Export failed:', error)
+      alert('Export failed, please try again')
+    }
+  }
+
+  // Handle share watchlist
+  const handleShare = () => {
+    if (watchlist.length === 0) {
+      alert('Your watchlist is empty, cannot share')
+      return
+    }
+    setShowShareModal(true)
+  }
+
   if (loading) {
     return (
       <div className="flex">
@@ -229,7 +253,27 @@ export default function Watchlists() {
           />
         ) : (
           <>
-            <h1 className="text-2xl font-bold text-gray-800 mb-6">Watchlist</h1>
+            <div className="flex items-center justify-between mb-6">
+              <h1 className="text-2xl font-bold text-gray-800">Watchlist</h1>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExport}
+                  disabled={watchlist.length === 0}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
+                >
+                  <span>📥</span>
+                  Export CSV
+                </button>
+                <button
+                  onClick={handleShare}
+                  disabled={watchlist.length === 0}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
+                >
+                  <span>🔗</span>
+                  Share
+                </button>
+              </div>
+            </div>
 
             {watchlist.length === 0 ? (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
@@ -397,6 +441,17 @@ export default function Watchlists() {
           stock={tradingStock}
           onClose={() => setShowTradingPanel(false)}
           onTrade={handleTrade}
+        />
+      )}
+
+      {/* Share Watchlist Modal */}
+      {showShareModal && (
+        <CreateSharedWatchlistModal
+          onClose={() => setShowShareModal(false)}
+          onSuccess={() => {
+            setShowShareModal(false)
+            alert('Watchlist shared successfully!')
+          }}
         />
       )}
     </div>

@@ -8,23 +8,26 @@ datasource db {
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  username       String          @unique
-  email          String          @unique
-  age            Int?
-  createdAt      DateTime        @default(now())
-  role           Role            @default(User)
-  status         Status          @default(Active)
-  joinedDate     DateTime        @default(now())
-  lastActive     DateTime        @default(now())
-  password       String?
-  provider       String          @default("local")
-  providerId     String?
-  gender         Gender?
-  orders         Order[]
-  accountBalance AccountBalance?
-  transactions   Transaction[]
-  watchlists     Watchlist[]
+  id                  Int                @id @default(autoincrement())
+  username            String             @unique
+  email               String             @unique
+  age                 Int?
+  createdAt           DateTime           @default(now())
+  role                Role               @default(User)
+  status              Status             @default(Active)
+  joinedDate          DateTime           @default(now())
+  lastActive          DateTime           @default(now())
+  password            String?
+  provider            String             @default("local")
+  providerId          String?
+  gender              Gender?
+  orders              Order[]
+  accountBalance      AccountBalance?
+  transactions        Transaction[]
+  watchlists          Watchlist[]
+  sharedWatchlists    SharedWatchlist[]  @relation("OwnedSharedWatchlists")
+  watchlistComments   WatchlistComment[] @relation("UserComments")
+  watchlistLikes      WatchlistLike[]    @relation("UserLikes")
 }
 
 model Order {
@@ -102,4 +105,41 @@ model Watchlist {
   createdAt DateTime @default(now())
 
   @@unique([userId, symbol])
+}
+
+// Social features for sharing watchlists
+model SharedWatchlist {
+  id          Int                 @id @default(autoincrement())
+  ownerId     Int
+  owner       User                @relation("OwnedSharedWatchlists", fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  isPublic    Boolean             @default(true)
+  symbols     String[]            // Array of stock symbols
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  comments    WatchlistComment[]
+  likes       WatchlistLike[]
+}
+
+model WatchlistComment {
+  id                Int              @id @default(autoincrement())
+  sharedWatchlistId Int
+  sharedWatchlist   SharedWatchlist  @relation(fields: [sharedWatchlistId], references: [id], onDelete: Cascade)
+  userId            Int
+  user              User             @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+  content           String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model WatchlistLike {
+  id                Int              @id @default(autoincrement())
+  sharedWatchlistId Int
+  sharedWatchlist   SharedWatchlist  @relation(fields: [sharedWatchlistId], references: [id], onDelete: Cascade)
+  userId            Int
+  user              User             @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime         @default(now())
+
+  @@unique([sharedWatchlistId, userId])
 }

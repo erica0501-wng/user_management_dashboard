@@ -37,6 +37,8 @@ const portfolioRoutes = require("./routes/portfolio")
 console.log('📦 Loading watchlist routes...')
 const watchlistRoutes = require("./routes/watchlist")
 console.log('✅ Watchlist routes loaded successfully')
+const socialRoutes = require("./routes/social")
+const exportRoutes = require("./routes/export")
 
 console.log('🔌 Loading all routes...')
 app.use("/market", marketRoutes)
@@ -44,6 +46,8 @@ app.use("/auth", require("./routes/auth"))
 app.use("/users", require("./routes/user"))
 app.use("/portfolio", portfolioRoutes)
 app.use("/watchlist", watchlistRoutes)
+app.use("/social", socialRoutes)
+app.use("/export", exportRoutes)
 console.log('✅ All routes loaded')
 
 /* ========================
