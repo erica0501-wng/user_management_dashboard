@@ -18,8 +18,11 @@ export default function Community() {
 
   useEffect(() => {
     const userData = localStorage.getItem("user")
+    console.log('Community - Raw userData from localStorage:', userData)
     if (userData) {
-      setUser(JSON.parse(userData))
+      const parsedUser = JSON.parse(userData)
+      console.log('Community - Parsed user:', parsedUser)
+      setUser(parsedUser)
     }
     loadData()
   }, [])
@@ -31,6 +34,7 @@ export default function Community() {
         getSharedWatchlists(),
         getMySharedWatchlists()
       ])
+      console.log('My Shared Watchlists data:', myShared)
       setSharedWatchlists(shared)
       setMySharedWatchlists(myShared)
     } catch (error) {
@@ -68,141 +72,123 @@ export default function Community() {
   })
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex">
       <Sidebar />
       
-      <div className="flex-1 ml-64 overflow-auto">
-        {/* Header */}
-        <div className="bg-white shadow-md sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-6">
+      <div className="ml-64 w-full min-h-screen bg-gray-50 overflow-x-hidden">
+        <div className="p-8">
+          <div className="mx-auto" style={{ maxWidth: "1400px" }}>
+            {/* Header */}
+            <div className="mb-8 flex justify-between items-center">
               <div>
-                <h1 className="text-4xl font-extrabold text-gray-900 mb-2">Community Watchlists</h1>
-                <p className="text-gray-600">Discover and share investment ideas with the community</p>
+                <h1 className="text-2xl font-bold text-gray-900">Community Watchlists</h1>
+                <p className="text-sm text-gray-500 mt-1">
+                  Discover and share investment ideas with the community
+                </p>
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
               >
-                <span className="text-xl">+</span>
-                Create Share
+                + Create Share
               </button>
             </div>
             
             {/* Tabs */}
-            <div className="flex gap-3 mb-6">
+            <div className="flex gap-2 mb-6">
               <button
                 onClick={() => setActiveTab('explore')}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all shadow-md ${
+                className={`px-4 py-2 rounded-lg font-medium transition ${
                   activeTab === 'explore'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg scale-105'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-lg'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
                 }`}
               >
-                Explore
-                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                  activeTab === 'explore' 
-                    ? 'bg-white/20 text-white' 
-                    : 'bg-indigo-100 text-indigo-700'
-                }`}>
-                  {sharedWatchlists.length}
-                </span>
+                Explore ({sharedWatchlists.length})
               </button>
               <button
                 onClick={() => setActiveTab('my-shared')}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all shadow-md ${
+                className={`px-4 py-2 rounded-lg font-medium transition ${
                   activeTab === 'my-shared'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg scale-105'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-lg'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
                 }`}
               >
-                My Shares
-                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                  activeTab === 'my-shared' 
-                    ? 'bg-white/20 text-white' 
-                    : 'bg-indigo-100 text-indigo-700'
-                }`}>
-                  {mySharedWatchlists.length}
-                </span>
+                My Shares ({mySharedWatchlists.length})
               </button>
             </div>
 
             {/* Search */}
-            <div className="relative">
+            <div className="mb-6">
               <input
                 type="text"
                 placeholder="Search watchlist or username..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-5 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shadow-sm text-lg"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-          </div>
-        </div>
 
-        {/* Content */}
-        <div className="max-w-7xl mx-auto p-6">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="relative">
-                <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200"></div>
-                <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-600 border-t-transparent absolute top-0 left-0"></div>
+            {/* Content */}
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-indigo-600"></div>
+                <p className="mt-4 text-gray-600">Loading watchlists...</p>
               </div>
-              <p className="mt-6 text-gray-600 font-medium text-lg">Loading watchlists...</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {activeTab === 'explore' ? (
-                filteredWatchlists.length === 0 ? (
-                  <div className="col-span-full text-center py-20">
-                    <div className="text-6xl mb-4">📭</div>
-                    <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                      {searchQuery ? 'No Results Found' : 'No Shared Watchlists Yet'}
-                    </h3>
-                    <p className="text-gray-600">
-                      {searchQuery ? 'Try a different search term' : 'Be the first to share a watchlist!'}
-                    </p>
-                  </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeTab === 'explore' ? (
+                  filteredWatchlists.length === 0 ? (
+                    <div className="col-span-full text-center py-12 bg-white rounded-lg">
+                      <div className="text-4xl mb-3">📭</div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-1">
+                        {searchQuery ? 'No Results Found' : 'No Shared Watchlists Yet'}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        {searchQuery ? 'Try a different search term' : 'Be the first to share a watchlist!'}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredWatchlists.map((wl) => (
+                      <WatchlistCard
+                        key={wl.id}
+                        watchlist={wl}
+                        currentUserId={user?.id}
+                        onView={() => setSelectedWatchlist(wl)}
+                        onLike={() => handleLike(wl.id)}
+                        onDelete={handleDelete}
+                      />
+                    ))
+                  )
                 ) : (
-                  filteredWatchlists.map((wl) => (
-                    <WatchlistCard
-                      key={wl.id}
-                      watchlist={wl}
-                      currentUserId={user?.id}
-                      onView={() => setSelectedWatchlist(wl)}
-                      onLike={() => handleLike(wl.id)}
-                      onDelete={handleDelete}
-                    />
-                  ))
-                )
-              ) : (
-                mySharedWatchlists.length === 0 ? (
-                  <div className="col-span-full text-center py-20">
-                    <div className="text-6xl mb-4">📊</div>
-                    <h3 className="text-2xl font-bold text-gray-800 mb-2">No Shared Watchlists</h3>
-                    <p className="text-gray-600 mb-6">Start sharing your investment ideas with the community</p>
-                    <button
-                      onClick={() => setShowCreateModal(true)}
-                      className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition font-semibold shadow-lg"
-                    >
-                      Create Your First Share
-                    </button>
-                  </div>
-                ) : (
-                  mySharedWatchlists.map((wl) => (
-                    <WatchlistCard
-                      key={wl.id}
-                      watchlist={wl}
-                      currentUserId={user?.id}
-                      isOwner={true}
-                      onView={() => setSelectedWatchlist(wl)}
-                      onDelete={handleDelete}
-                    />
-                  ))
-                )
-              )}
-            </div>
-          )}
+                  mySharedWatchlists.length === 0 ? (
+                    <div className="col-span-full text-center py-12 bg-white rounded-lg">
+                      <div className="text-4xl mb-3">📊</div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-1">No Shared Watchlists</h3>
+                      <p className="text-sm text-gray-600 mb-4">Start sharing your investment ideas with the community</p>
+                      <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                      >
+                        Create Your First Share
+                      </button>
+                    </div>
+                  ) : (
+                    mySharedWatchlists.map((wl) => (
+                      <WatchlistCard
+                        key={wl.id}
+                        watchlist={wl}
+                        currentUserId={user?.id}
+                        isOwner={true}
+                        onView={() => setSelectedWatchlist(wl)}
+                        onDelete={handleDelete}
+                      />
+                    ))
+                  )
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -217,14 +203,20 @@ export default function Community() {
         />
       )}
 
-      {selectedWatchlist && (
-        <SharedWatchlistDetailModal
-          watchlist={selectedWatchlist}
-          currentUserId={user?.id}
-          onClose={() => setSelectedWatchlist(null)}
-          onUpdate={loadData}
-        />
-      )}
+      {selectedWatchlist && (() => {
+        console.log('Rendering modal - watchlist:', selectedWatchlist.id, 'ownerId:', selectedWatchlist.ownerId, 'user:', user, 'user.id:', user?.id)
+        return (
+          <SharedWatchlistDetailModal
+            watchlist={selectedWatchlist}
+            currentUserId={user?.id}
+            onClose={() => {
+              console.log('Closing modal, user:', user)
+              setSelectedWatchlist(null)
+            }}
+            onUpdate={loadData}
+          />
+        )
+      })()}
     </div>
   )
 }
@@ -234,102 +226,104 @@ function WatchlistCard({ watchlist, currentUserId, isOwner, onView, onLike, onDe
 
   return (
     <div 
-      className="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border-2 border-gray-100 hover:border-indigo-300 transform hover:-translate-y-1 cursor-pointer group"
+      className="bg-white rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer relative"
       onClick={onView}
     >
-      {/* Gradient Header */}
-      <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+      {/* Delete button in top right - visible for all cards */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete(watchlist.id)
+        }}
+        className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+        title="Delete"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
       
-      <div className="p-6">
+      <div className="p-4">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <h3 className="font-bold text-xl text-gray-900 mb-2 group-hover:text-indigo-600 transition">
-              {watchlist.title}
-            </h3>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white font-bold text-sm">
-                {watchlist.owner?.username?.[0]?.toUpperCase() || '?'}
-              </div>
-              <p className="text-sm text-gray-600 font-medium">
-                {watchlist.owner?.username || 'Unknown'}
-              </p>
+        <div className="mb-3 pr-6">
+          <h3 className="font-semibold text-base text-gray-900 mb-2">
+            {watchlist.title}
+          </h3>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-medium text-xs">
+              {watchlist.owner?.username?.[0]?.toUpperCase() || '?'}
             </div>
+            <p className="text-xs text-gray-600">
+              {watchlist.owner?.username || 'Unknown'}
+            </p>
+            {!watchlist.isPublic && (
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                🔒 Private
+              </span>
+            )}
           </div>
-          {!watchlist.isPublic && (
-            <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-semibold border border-yellow-200">
-              🔒 Private
-            </span>
-          )}
         </div>
 
         {/* Description */}
         {watchlist.description && (
-          <p className="text-gray-700 text-sm mb-4 line-clamp-2 leading-relaxed">
+          <p className="text-gray-600 text-sm mb-3 line-clamp-2">
             {watchlist.description}
           </p>
         )}
 
         {/* Symbols */}
-        <div className="mb-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Stocks</span>
-            <div className="flex-1 h-px bg-gray-200"></div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {watchlist.symbols?.slice(0, 6).map((symbol, idx) => (
+        <div className="mb-3">
+          <div className="flex flex-wrap gap-1.5">
+            {watchlist.symbols?.slice(0, 5).map((symbol, idx) => (
               <span
                 key={idx}
-                className="px-3 py-1.5 bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 text-sm rounded-lg font-bold border border-indigo-200 hover:from-indigo-100 hover:to-purple-100 transition"
+                className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded font-medium"
               >
-                ${symbol}
+                {symbol}
               </span>
             ))}
-            {watchlist.symbols?.length > 6 && (
-              <span className="px-3 py-1.5 bg-gray-100 text-gray-600 text-sm rounded-lg font-semibold">
-                +{watchlist.symbols.length - 6}
+            {watchlist.symbols?.length > 5 && (
+              <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
+                +{watchlist.symbols.length - 5}
               </span>
             )}
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-4 border-t-2 border-gray-100">
-          <div className="flex gap-4">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 rounded-lg">
-              <span className="text-lg">❤️</span>
-              <span className="text-sm font-bold text-red-600">{watchlist._count?.likes || 0}</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-lg">
-              <span className="text-lg">💬</span>
-              <span className="text-sm font-bold text-blue-600">{watchlist._count?.comments || 0}</span>
-            </div>
-          </div>
-          
-          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-            {!isOwner && onLike && (
-              <button
-                onClick={onLike}
-                className={`p-2.5 rounded-xl transition-all transform hover:scale-110 ${
-                  isLiked 
-                    ? 'bg-red-100 text-red-500 shadow-md' 
-                    : 'bg-gray-100 text-gray-400 hover:bg-red-50'
-                }`}
-                title={isLiked ? 'Unlike' : 'Like'}
-              >
-                <span className="text-xl">{isLiked ? '❤️' : '🤍'}</span>
-              </button>
-            )}
-            {isOwner && (
-              <button
-                onClick={() => onDelete(watchlist.id)}
-                className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all transform hover:scale-110 shadow-md"
-                title="Delete"
-              >
-                <span className="text-xl">🗑️</span>
-              </button>
-            )}
-          </div>
+        {/* Footer - Like and Comment counts */}
+        <div className="flex items-center gap-3 pt-3 border-t border-gray-200 text-sm text-gray-600">
+          {onLike ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onLike()
+              }}
+              className={`flex items-center gap-1 transition-colors ${
+                isLiked 
+                  ? 'text-indigo-600 hover:text-indigo-700' 
+                  : 'text-gray-600 hover:text-indigo-600'
+              }`}
+              title={isLiked ? 'Unlike' : 'Like'}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
+              </svg>
+              {watchlist._count?.likes || 0}
+            </button>
+          ) : (
+            <span className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
+              </svg>
+              {watchlist._count?.likes || 0}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+            </svg>
+            {watchlist._count?.comments || 0}
+          </span>
         </div>
       </div>
     </div>

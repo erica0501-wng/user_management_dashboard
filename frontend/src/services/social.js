@@ -157,6 +157,8 @@ export const deleteComment = async (commentId) => {
 
 export const toggleLike = async (sharedWatchlistId) => {
   const token = getToken();
+  console.log('toggleLike called with id:', sharedWatchlistId, 'token exists:', !!token);
+  
   const response = await fetch(`${API_URL}/social/shared-watchlists/${sharedWatchlistId}/like`, {
     method: 'POST',
     headers: {
@@ -165,10 +167,14 @@ export const toggleLike = async (sharedWatchlistId) => {
   });
   
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Toggle like failed:', response.status, errorText);
     throw new Error('Failed to toggle like');
   }
   
-  return response.json();
+  const result = await response.json();
+  console.log('Toggle like result:', result);
+  return result;
 };
 
 export const checkIsLiked = async (sharedWatchlistId) => {

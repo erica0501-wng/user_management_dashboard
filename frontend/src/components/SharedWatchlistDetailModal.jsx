@@ -65,71 +65,96 @@ export default function SharedWatchlistDetailModal({ watchlist: initialWatchlist
 
   const handleToggleLike = async () => {
     try {
+      console.log('Toggling like for watchlist:', watchlist.id, 'Current isLiked:', isLiked)
       await toggleLike(watchlist.id)
       setIsLiked(!isLiked)
       await loadDetails()
       onUpdate()
+      console.log('Like toggled successfully, new isLiked:', !isLiked)
     } catch (error) {
       console.error('Failed to toggle like:', error)
+      alert('Failed to toggle like. Please try again.')
     }
   }
 
   const isOwner = currentUserId === watchlist.ownerId
 
+  console.log('Modal - currentUserId:', currentUserId, 'ownerId:', watchlist.ownerId, 'isOwner:', isOwner, 'isLiked:', isLiked)
+
   return (
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-20 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-gray-100 rounded-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="p-6 border-b">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">{watchlist.title}</h2>
-              <p className="text-gray-600">
-                Shared by: <span className="font-medium">{watchlist.owner?.username}</span>
+        <div className="p-6 border-b border-gray-300 bg-white">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1 pr-4">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">{watchlist.title}</h2>
+              <p className="text-sm text-gray-600">
+                Shared by: <span className="font-semibold text-gray-800">{watchlist.owner?.username}</span>
               </p>
-              {watchlist.description && (
-                <p className="text-gray-600 mt-2">{watchlist.description}</p>
-              )}
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg w-8 h-8 flex items-center justify-center transition"
+              title="Close"
             >
-              ×
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
 
+          {watchlist.description && (
+            <p className="text-sm text-gray-600 mb-4">{watchlist.description}</p>
+          )}
+
           {/* Stats */}
-          <div className="flex gap-6 mt-4">
-            <button
-              onClick={handleToggleLike}
-              disabled={!currentUserId}
-              className={`flex items-center gap-2 ${
-                currentUserId ? 'cursor-pointer hover:text-red-500' : 'cursor-default'
-              } transition`}
-            >
-              <span className={isLiked ? 'text-red-500' : 'text-gray-400'}>
-                {isLiked ? '❤️' : '🤍'}
-              </span>
-              <span className="font-medium">{watchlist._count?.likes || 0}</span>
-            </button>
-            <div className="flex items-center gap-2 text-gray-600">
-              <span>💬</span>
+          <div className="flex gap-4">
+            {currentUserId ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleToggleLike()
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${
+                  isLiked
+                    ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                    : 'bg-gray-200 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'
+                }`}
+                title={isLiked ? 'Unlike' : 'Like'}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
+                </svg>
+                <span className="font-medium">{watchlist._count?.likes || 0}</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
+                </svg>
+                <span className="font-medium">{watchlist._count?.likes || 0}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+              </svg>
               <span className="font-medium">{watchlist._count?.comments || 0}</span>
             </div>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Symbols */}
-          <div className="p-6 border-b">
-            <h3 className="font-semibold text-gray-800 mb-3">Stock List ({watchlist.symbols?.length || 0})</h3>
+          <div className="bg-white rounded-lg p-4 border border-gray-300">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Stock List ({watchlist.symbols?.length || 0})</h3>
             <div className="flex flex-wrap gap-2">
               {watchlist.symbols?.map((symbol, idx) => (
                 <span
                   key={idx}
-                  className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg font-medium"
+                  className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg font-semibold text-sm border border-indigo-200"
                 >
                   {symbol}
                 </span>
@@ -138,8 +163,8 @@ export default function SharedWatchlistDetailModal({ watchlist: initialWatchlist
           </div>
 
           {/* Comments */}
-          <div className="p-6">
-            <h3 className="font-semibold text-gray-800 mb-4">Discussion ({watchlist.comments?.length || 0})</h3>
+          <div className="bg-white rounded-lg p-4 border border-gray-300">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Discussion ({watchlist.comments?.length || 0})</h3>
 
             {/* Add Comment Form */}
             {currentUserId && (
@@ -148,14 +173,14 @@ export default function SharedWatchlistDetailModal({ watchlist: initialWatchlist
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   placeholder="Share your thoughts..."
-                  className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm bg-white"
                   rows={3}
                 />
                 <div className="flex justify-end mt-2">
                   <button
                     type="submit"
                     disabled={loading || !commentText.trim()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium"
                   >
                     {loading ? 'Posting...' : 'Post Comment'}
                   </button>
@@ -164,33 +189,42 @@ export default function SharedWatchlistDetailModal({ watchlist: initialWatchlist
             )}
 
             {/* Comments List */}
-            <div className="space-y-4">
+            <div className="space-y-3">
               {watchlist.comments?.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
+                <p className="text-gray-500 text-center py-8 text-sm">
                   No comments yet. Be the first to comment!
                 </p>
               ) : (
                 watchlist.comments?.map((comment) => (
-                  <div key={comment.id} className="bg-gray-50 rounded-lg p-4">
+                  <div key={comment.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                     <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <span className="font-medium text-gray-800">
-                          {comment.user?.username}
-                        </span>
-                        <span className="text-gray-500 text-sm ml-2">
-                          {new Date(comment.createdAt).toLocaleDateString('en-US')}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-medium text-xs">
+                          {comment.user?.username?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-800 text-sm">
+                            {comment.user?.username}
+                          </span>
+                          <span className="text-gray-500 text-xs ml-2">
+                            {new Date(comment.createdAt).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </span>
+                        </div>
                       </div>
                       {comment.userId === currentUserId && (
                         <button
                           onClick={() => handleDeleteComment(comment.id)}
-                          className="text-red-500 hover:text-red-700 text-sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded text-xs font-medium transition"
                         >
                           Delete
                         </button>
                       )}
                     </div>
-                    <p className="text-gray-700">{comment.content}</p>
+                    <p className="text-gray-700 text-sm leading-relaxed">{comment.content}</p>
                   </div>
                 ))
               )}
@@ -199,10 +233,10 @@ export default function SharedWatchlistDetailModal({ watchlist: initialWatchlist
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t flex justify-end">
+        <div className="p-4 border-t border-gray-300 bg-white flex justify-end">
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition"
+            className="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium text-sm"
           >
             Close
           </button>

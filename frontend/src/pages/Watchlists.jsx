@@ -261,7 +261,6 @@ export default function Watchlists() {
                   disabled={watchlist.length === 0}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
                 >
-                  <span>📥</span>
                   Export CSV
                 </button>
                 <button

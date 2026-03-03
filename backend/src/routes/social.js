@@ -73,6 +73,12 @@ router.get('/my-shared-watchlists', authenticateToken, async (req, res) => {
     const sharedWatchlists = await prisma.sharedWatchlist.findMany({
       where: { ownerId: userId },
       include: {
+        owner: {
+          select: {
+            id: true,
+            username: true
+          }
+        },
         _count: {
           select: {
             comments: true,

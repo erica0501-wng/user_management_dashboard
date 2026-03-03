@@ -424,7 +424,7 @@ export default function Portfolio() {
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
             >
-              <span>📥</span>
+          
               Export Data
               <span className="text-xs">▼</span>
             </button>
@@ -439,7 +439,7 @@ export default function Portfolio() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
                   >
-                    📊 Portfolio Holdings
+                    Portfolio Holdings
                   </button>
                   <button
                     onClick={async () => {
@@ -448,7 +448,7 @@ export default function Portfolio() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
                   >
-                    📝 Order History
+                    Order History
                   </button>
                   <button
                     onClick={async () => {
@@ -457,7 +457,7 @@ export default function Portfolio() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
                   >
-                    💰 Transaction History
+                    Transaction History
                   </button>
                   <button
                     onClick={async () => {
@@ -466,7 +466,7 @@ export default function Portfolio() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700"
                   >
-                    📋 Account Summary
+                    Account Summary
                   </button>
                   <div className="border-t my-2"></div>
                   <button
@@ -476,7 +476,7 @@ export default function Portfolio() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 transition text-gray-700 font-medium"
                   >
-                    📦 Export All
+                    Export All
                   </button>
                 </div>
               </div>
