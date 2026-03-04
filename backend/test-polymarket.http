@@ -1,0 +1,19 @@
+# Test Polymarket API Endpoints
+
+# Test 1: Get all markets
+GET http://localhost:3000/polymarket/markets
+
+###
+
+# Test 2: Get markets with pagination
+GET http://localhost:3000/polymarket/markets?limit=10&offset=0
+
+###
+
+# Test 3: Get trending markets
+GET http://localhost:3000/polymarket/trending
+
+###
+
+# Test 4: Get specific market (replace with actual ID)
+GET http://localhost:3000/polymarket/markets/mock-1
