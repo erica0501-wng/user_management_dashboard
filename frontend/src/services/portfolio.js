@@ -250,3 +250,56 @@ export const runStrategyBacktest = async (symbol, years) => {
 
   return response.json()
 }
+
+// ==================== Polymarket Functions ====================
+
+// Get polymarket positions
+export const getPolymarketPositions = async () => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/polymarket/positions`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch polymarket positions')
+  }
+
+  return response.json()
+}
+
+// Close a polymarket position
+export const closePolymarketPosition = async (positionId, closePrice) => {
+  const token = getToken()
+  if (!token) throw new Error('No authentication token')
+
+  const response = await fetch(`${API_URL}/polymarket/positions/${positionId}/close`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ closePrice })
+  })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired. Please login again.')
+  }
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || 'Failed to close position')
+  }
+
+  return response.json()
+}
+

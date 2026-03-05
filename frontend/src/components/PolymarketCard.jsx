@@ -1,7 +1,9 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
-export default function PolymarketCard({ market }) {
+export default function PolymarketCard({ market, onTradeComplete }) {
   const [showDetails, setShowDetails] = useState(false)
+  const navigate = useNavigate()
 
   // 格式化日期
   const formatDate = (dateString) => {
@@ -210,7 +212,7 @@ export default function PolymarketCard({ market }) {
             {showDetails ? "Hide" : "Details"}
           </button>
           <button
-            onClick={() => window.open(`https://polymarket.com/event/${market.id}`, "_blank")}
+            onClick={() => navigate(`/polymarket/trade/${market.id}`)}
             className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
           >
             Trade

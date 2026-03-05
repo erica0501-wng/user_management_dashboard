@@ -25,3 +25,5 @@ dist-ssr
 
 # Ignore local Prisma sqlite database
 backend/prisma/prisma/dev.db
+
+.vercel

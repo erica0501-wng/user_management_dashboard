@@ -1,0 +1,270 @@
+import { useState, useEffect } from "react"
+import { getPolymarketPositions, closePolymarketPosition } from "../services/portfolio"
+
+export default function PolymarketPositions() {
+  const [positions, setPositions] = useState([])
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [closingPosition, setClosingPosition] = useState(null)
+  const [filter, setFilter] = useState("all") // all, open, closed
+
+  useEffect(() => {
+    fetchPositions()
+  }, [])
+
+  const fetchPositions = async () => {
+    try {
+      setLoading(true)
+      const data = await getPolymarketPositions()
+      setPositions(data.positions || [])
+      setStats(data.stats || {})
+      setError(null)
+    } catch (err) {
+      console.error("Error fetching positions:", err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClosePosition = async (positionId, currentPrice) => {
+    if (!window.confirm("Are you sure you want to close this position?")) {
+      return
+    }
+
+    try {
+      setClosingPosition(positionId)
+      const result = await closePolymarketPosition(positionId, currentPrice)
+      alert(result.message)
+      fetchPositions() // Refresh positions
+    } catch (err) {
+      alert(`Failed to close position: ${err.message}`)
+    } finally {
+      setClosingPosition(null)
+    }
+  }
+
+  const filteredPositions = positions.filter(p => {
+    if (filter === "open") return p.status === "Open"
+    if (filter === "closed") return p.status === "Closed"
+    return true
+  })
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    })
+  }
+
+  const calculatePnL = (position) => {
+    if (position.status === "Closed" || !position.currentPrice) {
+      return null
+    }
+    const currentValue = position.shares * position.currentPrice
+    const pnl = currentValue - position.totalCost
+    const pnlPercent = (pnl / position.totalCost) * 100
+    return { pnl, pnlPercent }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+        <p className="font-medium">Error loading positions</p>
+        <p className="text-sm">{error}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-sm text-gray-600 mb-1">Total Positions</div>
+            <div className="text-2xl font-bold text-gray-900">{stats.totalPositions || 0}</div>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-sm text-gray-600 mb-1">Total Invested</div>
+            <div className="text-2xl font-bold text-gray-900">${stats.totalInvested?.toFixed(2) || "0.00"}</div>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-sm text-gray-600 mb-1">Current Value</div>
+            <div className="text-2xl font-bold text-gray-900">${stats.currentValue?.toFixed(2) || "0.00"}</div>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div className="text-sm text-gray-600 mb-1">Total P&L</div>
+            <div className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ${stats.totalPnL?.toFixed(2) || "0.00"}
+              {stats.totalPnLPercent !== undefined && (
+                <span className="text-sm ml-2">({stats.totalPnLPercent.toFixed(2)}%)</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        {[
+          { id: "all", label: "All Positions" },
+          { id: "open", label: "Open" },
+          { id: "closed", label: "Closed" }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setFilter(tab.id)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filter === tab.id
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Positions List */}
+      {filteredPositions.length === 0 ? (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+          <div className="text-gray-400 mb-4">
+            <svg className="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-lg">No positions found</p>
+          <p className="text-gray-400 text-sm mt-2">
+            Start trading on Polymarket to see your positions here
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Market
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Outcome
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Shares
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Avg Price
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cost
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Current
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    P&L
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredPositions.map((position) => {
+                  const pnlData = calculatePnL(position)
+                  
+                  return (
+                    <tr key={position.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
+                          {position.question}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {position.outcome}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm text-gray-900">
+                        {position.shares.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm text-gray-900">
+                        ${position.avgPrice.toFixed(3)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm font-medium text-gray-900">
+                        ${position.totalCost.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm text-gray-900">
+                        {position.currentPrice ? `$${position.currentPrice.toFixed(3)}` : "-"}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm">
+                        {pnlData ? (
+                          <div>
+                            <div className={`font-medium ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              ${pnlData.pnl.toFixed(2)}
+                            </div>
+                            <div className={`text-xs ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              ({pnlData.pnlPercent >= 0 ? '+' : ''}{pnlData.pnlPercent.toFixed(2)}%)
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {position.status === "Open" ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span className="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></span>
+                            Open
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            Closed
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {formatDate(position.createdAt)}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {position.status === "Open" && (
+                          <button
+                            onClick={() => handleClosePosition(position.id, position.currentPrice || position.avgPrice)}
+                            disabled={closingPosition === position.id}
+                            className="text-sm text-red-600 hover:text-red-800 font-medium disabled:text-gray-400 disabled:cursor-not-allowed"
+                          >
+                            {closingPosition === position.id ? "Closing..." : "Close"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

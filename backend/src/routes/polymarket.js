@@ -1,5 +1,9 @@
 const express = require("express")
 const router = express.Router()
+const { PrismaClient } = require("@prisma/client")
+const authenticate = require("../middleware/auth")
+
+const prisma = new PrismaClient()
 
 /**
  * GET /polymarket/markets
@@ -345,6 +349,251 @@ router.get("/trending", async (req, res) => {
   } catch (error) {
     console.error("❌ Polymarket Trending Error:", error)
     
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * POST /polymarket/trade
+ * 执行预测市场交易
+ */
+router.post("/trade", authenticate, async (req, res) => {
+  try {
+    const { marketId, question, outcome, shares, price } = req.body
+    const userId = req.user.id
+
+    // Validate inputs
+    if (!marketId || !question || !outcome || !shares || !price) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields"
+      })
+    }
+
+    const sharesNum = parseFloat(shares)
+    const priceNum = parseFloat(price)
+
+    if (isNaN(sharesNum) || sharesNum <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid shares amount"
+      })
+    }
+
+    if (isNaN(priceNum) || priceNum <= 0 || priceNum > 1) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid price (must be between 0 and 1)"
+      })
+    }
+
+    const totalCost = sharesNum * priceNum
+
+    // Check user balance - create if doesn't exist
+    let balance = await prisma.accountBalance.findUnique({
+      where: { userId }
+    })
+
+    // If user doesn't have a balance record, create one with default $100,000
+    if (!balance) {
+      balance = await prisma.accountBalance.create({
+        data: {
+          userId,
+          availableCash: 100000,
+          totalInvested: 0
+        }
+      })
+    }
+
+    if (balance.availableCash < totalCost) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient funds. Required: $${totalCost.toFixed(2)}, Available: $${balance.availableCash.toFixed(2)}`
+      })
+    }
+
+    // Check if position already exists for this market and outcome
+    const existingPosition = await prisma.polymarketPosition.findFirst({
+      where: {
+        userId,
+        marketId,
+        outcome,
+        status: "Open"
+      }
+    })
+
+    let position
+    if (existingPosition) {
+      // Update existing position (average price calculation)
+      const newTotalShares = existingPosition.shares + sharesNum
+      const newTotalCost = existingPosition.totalCost + totalCost
+      const newAvgPrice = newTotalCost / newTotalShares
+
+      position = await prisma.polymarketPosition.update({
+        where: { id: existingPosition.id },
+        data: {
+          shares: newTotalShares,
+          totalCost: newTotalCost,
+          avgPrice: newAvgPrice,
+          currentPrice: priceNum
+        }
+      })
+    } else {
+      // Create new position
+      position = await prisma.polymarketPosition.create({
+        data: {
+          userId,
+          marketId,
+          question,
+          outcome,
+          shares: sharesNum,
+          avgPrice: priceNum,
+          totalCost,
+          currentPrice: priceNum,
+          status: "Open"
+        }
+      })
+    }
+
+    // Deduct from user balance and increase invested amount
+    await prisma.accountBalance.update({
+      where: { userId },
+      data: {
+        availableCash: { decrement: totalCost },
+        totalInvested: { increment: totalCost }
+      }
+    })
+
+    res.json({
+      success: true,
+      position,
+      message: `Successfully purchased ${sharesNum} shares of "${outcome}" for $${totalCost.toFixed(2)}`
+    })
+  } catch (error) {
+    console.error("❌ Polymarket Trade Error:", error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * GET /polymarket/positions
+ * 获取用户的预测市场持仓
+ */
+router.get("/positions", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id
+
+    const positions = await prisma.polymarketPosition.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" }
+    })
+
+    // Calculate total stats
+    const totalInvested = positions.reduce((sum, p) => sum + p.totalCost, 0)
+    const totalShares = positions.reduce((sum, p) => sum + p.shares, 0)
+    
+    // Calculate current value (if currentPrice is available)
+    const currentValue = positions.reduce((sum, p) => {
+      return sum + (p.currentPrice ? p.shares * p.currentPrice : p.totalCost)
+    }, 0)
+
+    const totalPnL = currentValue - totalInvested
+    const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
+
+    res.json({
+      success: true,
+      positions,
+      stats: {
+        totalPositions: positions.length,
+        totalInvested,
+        totalShares,
+        currentValue,
+        totalPnL,
+        totalPnLPercent
+      }
+    })
+  } catch (error) {
+    console.error("❌ Polymarket Positions Error:", error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * POST /polymarket/positions/:id/close
+ * 平仓预测市场持仓
+ */
+router.post("/positions/:id/close", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { closePrice } = req.body
+    const userId = req.user.id
+
+    if (!closePrice || isNaN(parseFloat(closePrice))) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid close price"
+      })
+    }
+
+    const closePriceNum = parseFloat(closePrice)
+
+    // Find position
+    const position = await prisma.polymarketPosition.findFirst({
+      where: {
+        id: parseInt(id),
+        userId,
+        status: "Open"
+      }
+    })
+
+    if (!position) {
+      return res.status(404).json({
+        success: false,
+        error: "Position not found or already closed"
+      })
+    }
+
+    // Calculate returns
+    const proceeds = position.shares * closePriceNum
+    const pnl = proceeds - position.totalCost
+    const pnlPercent = (pnl / position.totalCost) * 100
+
+    // Update position status
+    await prisma.polymarketPosition.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: "Closed",
+        currentPrice: closePriceNum
+      }
+    })
+
+    // Return funds to user
+    await prisma.accountBalance.update({
+      where: { userId },
+      data: {
+        availableCash: { increment: proceeds },
+        totalInvested: { decrement: position.totalCost }
+      }
+    })
+
+    res.json({
+      success: true,
+      message: `Position closed. P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`,
+      proceeds,
+      pnl,
+      pnlPercent
+    })
+  } catch (error) {
+    console.error("❌ Polymarket Close Position Error:", error)
     res.status(500).json({
       success: false,
       error: error.message

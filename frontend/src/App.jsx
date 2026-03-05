@@ -7,6 +7,7 @@ import Portfolio from "./pages/Portfolio"
 import Trading from "./pages/Trading"
 import Community from "./pages/Community"
 import Polymarket from "./pages/Polymarket"
+import PolymarketTrade from "./pages/PolymarketTrade"
 
 export default function App() {
   const isLoggedIn = !!localStorage.getItem("token")
@@ -52,6 +53,11 @@ export default function App() {
         <Route
           path="/polymarket"
           element={isLoggedIn ? <Polymarket /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/polymarket/trade/:marketId"
+          element={isLoggedIn ? <PolymarketTrade /> : <Navigate to="/login" />}
         />
       </Routes>
     </BrowserRouter>

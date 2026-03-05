@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react"
 import Sidebar from "../components/Sidebar"
 import Modal from "../components/Modal"
+import PolymarketPositions from "../components/PolymarketPositions"
+import TradeHistory from "../components/TradeHistory"
 import { getAccountBalance, getOrders, updateOrderStatus, topUpBalance, withdrawBalance, getTransactions, runStrategyBacktest } from "../services/portfolio"
 import { exportPortfolio, exportOrders, exportTransactions, exportAccountSummary, exportAllData } from "../services/export"
 import { Chart as ChartJS, CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
@@ -348,7 +350,9 @@ export default function Portfolio() {
 
   const tabs = [
     { id: "orders", label: "Orders" },
+    { id: "history", label: "Trade History" },
     { id: "transactions", label: "Transactions" },
+    { id: "polymarket", label: "Polymarket" },
     { id: "analysis", label: "Analysis" }
   ]
 
@@ -712,6 +716,18 @@ export default function Portfolio() {
                     </tbody>
                   </table>
                 )}
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div className="p-6">
+                <TradeHistory />
+              </div>
+            )}
+
+            {activeTab === "polymarket" && (
+              <div className="p-6">
+                <PolymarketPositions />
               </div>
             )}
 
