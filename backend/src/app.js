@@ -40,6 +40,7 @@ console.log('✅ Watchlist routes loaded successfully')
 const socialRoutes = require("./routes/social")
 const exportRoutes = require("./routes/export")
 const polymarketRoutes = require("./routes/polymarket")
+const alertRoutes = require("./routes/alert")
 
 console.log('🔌 Loading all routes...')
 app.use("/market", marketRoutes)
@@ -50,6 +51,7 @@ app.use("/watchlist", watchlistRoutes)
 app.use("/social", socialRoutes)
 app.use("/export", exportRoutes)
 app.use("/polymarket", polymarketRoutes)
+app.use("/alerts", alertRoutes)
 console.log('✅ All routes loaded')
 
 /* ========================

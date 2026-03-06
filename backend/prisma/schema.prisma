@@ -29,6 +29,7 @@ model User {
   watchlistComments   WatchlistComment[]   @relation("UserComments")
   watchlistLikes      WatchlistLike[]      @relation("UserLikes")
   polymarketPositions PolymarketPosition[] @relation("PolymarketPositions")
+  alerts              Alert[]              @relation("UserAlerts")
 }
 
 model Order {
@@ -166,4 +167,33 @@ enum PositionStatus {
   Open
   Closed
   Resolved
+}
+
+// Alerts for Polymarket markets
+model Alert {
+  id          Int        @id @default(autoincrement())
+  userId      Int
+  user        User       @relation("UserAlerts", fields: [userId], references: [id], onDelete: Cascade)
+  marketId    String     // Polymarket market ID
+  question    String     // Market question for reference
+  outcome     String     // Which outcome to monitor (Yes/No or specific option)
+  alertType   AlertType  // Type of alert (Price, OrderBook)
+  targetPrice Float?     // Target price for price alerts (0-1)
+  condition   AlertCondition? // Above or Below for price alerts
+  orderBookThreshold Float? // Minimum order book size to trigger (for order book alerts)
+  isActive    Boolean    @default(true)
+  isTriggered Boolean    @default(false)
+  triggeredAt DateTime?  // When the alert was triggered
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum AlertType {
+  Price          // Price reaches target
+  OrderBook      // Large order book appears
+}
+
+enum AlertCondition {
+  Above    // Price goes above target
+  Below    // Price goes below target
 }

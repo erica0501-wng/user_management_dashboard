@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
+import AlertNotifications from "./AlertNotifications"
 
 export default function Sidebar() {
   const [active, setActive] = useState("dashboard")
@@ -30,7 +31,10 @@ export default function Sidebar() {
 
   return (
     <div className="w-64 h-screen bg-gray-900 text-white p-4 fixed left-0 top-0 z-[100]">
-      <h1 className="text-2xl font-bold mb-8">QuadraStocks</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-bold">QuadraStocks</h1>
+        <AlertNotifications />
+      </div>
       
       <ul className="space-y-2">
         {items.map((item) => (

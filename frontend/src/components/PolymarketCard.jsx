@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { Bell, BookOpen } from "lucide-react"
 
 export default function PolymarketCard({ market, onTradeComplete }) {
   const [showDetails, setShowDetails] = useState(false)
@@ -210,6 +211,14 @@ export default function PolymarketCard({ market, onTradeComplete }) {
             className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
           >
             {showDetails ? "Hide" : "Details"}
+          </button>
+          <button
+            onClick={() => navigate(`/polymarket/details/${market.id}`)}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium flex items-center gap-2"
+            title="View Alerts & Order Book"
+          >
+            <Bell className="w-4 h-4" />
+            <BookOpen className="w-4 h-4" />
           </button>
           <button
             onClick={() => navigate(`/polymarket/trade/${market.id}`)}

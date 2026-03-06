@@ -13,29 +13,68 @@ router.get("/markets", async (req, res) => {
   try {
     const { limit = 20, offset = 0 } = req.query
     
-    // 强制使用模拟数据以确保分类正确
-    throw new Error("Using mock data for better category support")
-    
-    // 调用 Polymarket API
+    // Try to call Polymarket API first
+    console.log("📡 Attempting to fetch from Polymarket API...")
     const response = await fetch(
-      `https://gamma-api.polymarket.com/markets?limit=${limit}&offset=${offset}&closed=false`
+      `https://gamma-api.polymarket.com/markets?limit=${limit}&offset=${offset}&closed=false`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      }
     )
     
     if (!response.ok) {
+      console.log(`⚠️ Polymarket API returned status: ${response.status}`)
       throw new Error(`Polymarket API error: ${response.status}`)
     }
     
     const data = await response.json()
+    console.log(`✅ Successfully fetched ${Array.isArray(data) ? data.length : 'data'} markets from Polymarket API`)
     
     // 格式化返回数据 - 确保数据格式一致
     const markets = (Array.isArray(data) ? data : []).map(market => {
-      // 确保 outcomes 和 outcomePrices 是数组
-      let outcomes = Array.isArray(market.outcomes) ? market.outcomes : ["Yes", "No"]
-      let outcomePrices = Array.isArray(market.outcomePrices) 
-        ? market.outcomePrices 
-        : market.clobTokenIds && Array.isArray(market.clobTokenIds)
-          ? market.clobTokenIds.map(() => "0.5") // 如果有 clobTokenIds 但没有价格，使用默认值
-          : ["0.5", "0.5"]
+      // Parse outcomes if it's a string
+      let outcomes = market.outcomes
+      if (typeof outcomes === 'string') {
+        try {
+          outcomes = JSON.parse(outcomes)
+        } catch (e) {
+          outcomes = ["Yes", "No"]
+        }
+      } else if (!Array.isArray(outcomes)) {
+        outcomes = ["Yes", "No"]
+      }
+      
+      // Parse outcomePrices if it's a string
+      let outcomePrices = market.outcomePrices
+      if (typeof outcomePrices === 'string') {
+        try {
+          outcomePrices = JSON.parse(outcomePrices)
+        } catch (e) {
+          outcomePrices = outcomes.map(() => "0.5")
+        }
+      } else if (!Array.isArray(outcomePrices)) {
+        outcomePrices = outcomes.map(() => "0.5")
+      }
+      
+      // Parse clobTokenIds if it's a string
+      let tokenIds = []
+      if (market.clobTokenIds) {
+        try {
+          tokenIds = typeof market.clobTokenIds === 'string' 
+            ? JSON.parse(market.clobTokenIds) 
+            : market.clobTokenIds
+        } catch (e) {
+          console.log('Failed to parse clobTokenIds:', e)
+        }
+      }
+      
+      // Create tokens array mapping outcomes to token IDs
+      const tokens = outcomes.map((outcome, index) => ({
+        outcome,
+        tokenId: tokenIds[index] || null
+      }))
       
       return {
         id: market.id || market.condition_id || `market-${Date.now()}`,
@@ -44,6 +83,7 @@ router.get("/markets", async (req, res) => {
         image: market.image || market.icon || "https://via.placeholder.com/400x200?text=Market",
         outcomes: outcomes,
         outcomePrices: outcomePrices,
+        tokens: tokens, // Add tokens array with outcome-to-tokenId mapping
         volume: market.volume || market.volume24hr || "0",
         liquidity: market.liquidity || "0",
         endDate: market.endDate || market.end_date_iso || market.closesAt || null,
@@ -55,10 +95,11 @@ router.get("/markets", async (req, res) => {
     res.json({
       success: true,
       count: markets.length,
-      markets
+      markets,
+      source: "polymarket-api"
     })
   } catch (error) {
-    console.error("❌ Polymarket API Error:", error)
+    console.error("❌ Polymarket API Error:", error.message)
     
     // 如果 API 失败，返回模拟数据
     const mockMarkets = [
@@ -69,6 +110,10 @@ router.get("/markets", async (req, res) => {
         image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=400&h=200&fit=crop",
         outcomes: ["Yes", "No"],
         outcomePrices: ["0.65", "0.35"],
+        tokens: [
+          { outcome: "Yes", tokenId: "mock-1-yes-token" },
+          { outcome: "No", tokenId: "mock-1-no-token" }
+        ],
         volume: "1234567.89",
         liquidity: "234567.89",
         endDate: "2026-12-31T23:59:59Z",
@@ -82,6 +127,10 @@ router.get("/markets", async (req, res) => {
         image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&h=200&fit=crop",
         outcomes: ["Yes", "No"],
         outcomePrices: ["0.42", "0.58"],
+        tokens: [
+          { outcome: "Yes", tokenId: "mock-2-yes-token" },
+          { outcome: "No", tokenId: "mock-2-no-token" }
+        ],
         volume: "987654.32",
         liquidity: "123456.78",
         endDate: "2026-12-31T23:59:59Z",
@@ -284,12 +333,14 @@ router.get("/markets", async (req, res) => {
         createdAt: "2026-01-22T00:00:00Z"
       }
     ]
-    
+    console.log("📦 Using mock data as fallback")
     res.json({
       success: true,
       count: mockMarkets.length,
       markets: mockMarkets,
-      note: "Using mock data due to API unavailability",
+      source: "mock-data",
+      note: "Using mock data - Polymarket API unavailable or blocked",
+      reason: "Using mock data due to API unavailability",
       error: error.message
     })
   }
@@ -594,6 +645,186 @@ router.post("/positions/:id/close", authenticate, async (req, res) => {
     })
   } catch (error) {
     console.error("❌ Polymarket Close Position Error:", error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * GET /polymarket/orderbook/:tokenId
+ * Get order book data for a specific market outcome
+ * Polymarket uses CLOB (Central Limit Order Book) API
+ */
+router.get("/orderbook/:tokenId", async (req, res) => {
+  try {
+    const { tokenId } = req.params
+    
+    console.log(`📊 Attempting to fetch order book for token: ${tokenId}`)
+    
+    // Check if tokenId is valid (should be a long number string or contains 'mock')
+    if (!tokenId || tokenId === 'null' || tokenId === 'undefined') {
+      throw new Error(`Invalid token ID: ${tokenId}`)
+    }
+    
+    // If it's a mock token, return mock data immediately
+    if (tokenId.includes('mock') || tokenId.includes('token')) {
+      console.log('📦 Detected mock token ID, returning mock data without API call')
+      throw new Error('Mock token ID detected - using mock data')
+    }
+    
+    // Try to fetch from Polymarket CLOB API
+    const url = `https://clob.polymarket.com/book?token_id=${tokenId}`
+    console.log(`📊 Fetching from: ${url}`)
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      }
+    })
+    
+    console.log(`📊 CLOB API Response Status: ${response.status}`)
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.log(`📊 CLOB API Error Response: ${errorText}`)
+      throw new Error(`Polymarket CLOB API error: ${response.status} - ${errorText}`)
+    }
+    
+    const orderBook = await response.json()
+    console.log(`✅ Successfully fetched order book from CLOB API - Bids: ${orderBook.bids?.length}, Asks: ${orderBook.asks?.length}`)
+    
+    // Calculate order book depth metrics
+    const bids = orderBook.bids || []
+    const asks = orderBook.asks || []
+    
+    const bidVolume = bids.reduce((sum, bid) => sum + parseFloat(bid.size || 0), 0)
+    const askVolume = asks.reduce((sum, ask) => sum + parseFloat(ask.size || 0), 0)
+    const totalVolume = bidVolume + askVolume
+    
+    // Calculate spread
+    const bestBid = bids.length > 0 ? parseFloat(bids[0].price) : 0
+    const bestAsk = asks.length > 0 ? parseFloat(asks[0].price) : 0
+    const spread = bestAsk - bestBid
+    const spreadPercent = bestBid > 0 ? (spread / bestBid) * 100 : 0
+    
+    res.json({
+      success: true,
+      source: "clob-api",
+      tokenId,
+      timestamp: orderBook.timestamp || new Date().toISOString(),
+      bids: bids.slice(0, 20), // Top 20 bids
+      asks: asks.slice(0, 20), // Top 20 asks
+      metrics: {
+        bidVolume,
+        askVolume,
+        totalVolume,
+        bestBid,
+        bestAsk,
+        spread,
+        spreadPercent,
+        depth: {
+          bids: bids.length,
+          asks: asks.length
+        }
+      }
+    })
+  } catch (error) {
+    console.error("❌ Polymarket Order Book Error:", error.message)
+    
+    // Return mock order book data if API fails
+    const mockOrderBook = {
+      success: true,
+      source: "mock-data",
+      tokenId: req.params.tokenId,
+      timestamp: new Date().toISOString(),
+      bids: [
+        { price: "0.65", size: "1250", total: "812.50" },
+        { price: "0.64", size: "2100", total: "1344.00" },
+        { price: "0.63", size: "890", total: "560.70" },
+        { price: "0.62", size: "1500", total: "930.00" },
+        { price: "0.61", size: "3200", total: "1952.00" },
+        { price: "0.60", size: "1800", total: "1080.00" },
+        { price: "0.59", size: "950", total: "560.50" },
+        { price: "0.58", size: "1200", total: "696.00" },
+        { price: "0.57", size: "2400", total: "1368.00" },
+        { price: "0.56", size: "1650", total: "924.00" }
+      ],
+      asks: [
+        { price: "0.66", size: "980", total: "646.80" },
+        { price: "0.67", size: "1450", total: "971.50" },
+        { price: "0.68", size: "2200", total: "1496.00" },
+        { price: "0.69", size: "1100", total: "759.00" },
+        { price: "0.70", size: "1900", total: "1330.00" },
+        { price: "0.71", size: "850", total: "603.50" },
+        { price: "0.72", size: "1600", total: "1152.00" },
+        { price: "0.73", size: "1300", total: "949.00" },
+        { price: "0.74", size: "2100", total: "1554.00" },
+        { price: "0.75", size: "1750", total: "1312.50" }
+      ],
+      metrics: {
+        bidVolume: 17940,
+        askVolume: 15230,
+        totalVolume: 33170,
+        bestBid: 0.65,
+        bestAsk: 0.66,
+        spread: 0.01,
+        spreadPercent: 1.54,
+        depth: {
+          bids: 10,
+          asks: 10
+        }
+      },
+      note: "Using mock data - CLOB API unavailable or requires authentication",
+      reason: error.message
+    }
+    
+    console.log('📦 Returning mock order book data')
+    res.json(mockOrderBook)
+  }
+})
+
+/**
+ * GET /polymarket/market/:marketId/orderbooks
+ * Get order books for all outcomes of a market
+ */
+router.get("/market/:marketId/orderbooks", async (req, res) => {
+  try {
+    const { marketId } = req.params
+    
+    // In a real implementation, you would:
+    // 1. Fetch market details to get token IDs for each outcome
+    // 2. Fetch order book for each token ID
+    // 3. Aggregate and return
+    
+    // For now, return mock data structure
+    res.json({
+      success: true,
+      marketId,
+      orderBooks: {
+        "Yes": {
+          tokenId: `${marketId}-yes`,
+          bestBid: 0.65,
+          bestAsk: 0.66,
+          bidVolume: 17940,
+          askVolume: 15230,
+          totalVolume: 33170
+        },
+        "No": {
+          tokenId: `${marketId}-no`,
+          bestBid: 0.34,
+          bestAsk: 0.35,
+          bidVolume: 15230,
+          askVolume: 17940,
+          totalVolume: 33170
+        }
+      },
+      note: "Simplified order book summary for market outcomes"
+    })
+  } catch (error) {
+    console.error("❌ Polymarket Market Order Books Error:", error)
     res.status(500).json({
       success: false,
       error: error.message

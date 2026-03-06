@@ -8,6 +8,7 @@ export default function Polymarket() {
   const [error, setError] = useState(null)
   const [category, setCategory] = useState("all") // all, crypto, politics, sports, tech, finance, entertainment
   const [searchQuery, setSearchQuery] = useState("")
+  const [dataSource, setDataSource] = useState(null)
 
   useEffect(() => {
     fetchMarkets()
@@ -78,6 +79,14 @@ export default function Polymarket() {
 
       const data = await response.json()
       setMarkets(data.markets || [])
+      setDataSource(data.source || 'unknown')
+      
+      // Log data source info
+      if (data.source === 'mock-data') {
+        console.log('ℹ️ Using mock data:', data.note || data.reason)
+      } else {
+        console.log('✅ Using real Polymarket API data')
+      }
     } catch (err) {
       console.error("Error fetching markets:", err)
       setError(err.message)
