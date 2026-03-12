@@ -108,9 +108,10 @@ export default function PolymarketTrade() {
   }
 
   const price = getOutcomePrice()
-  const totalCost = (price * shares).toFixed(2)
-  const potentialReturn = shares.toFixed(2)
-  const potentialProfit = (shares - totalCost).toFixed(2)
+  const sharesNum = parseFloat(shares) || 0
+  const totalCost = (price * sharesNum).toFixed(2)
+  const potentialReturn = sharesNum.toFixed(2)
+  const potentialProfit = (sharesNum - totalCost).toFixed(2)
 
   const handleTrade = async () => {
     if (!selectedOutcome) {
@@ -422,7 +423,7 @@ export default function PolymarketTrade() {
                 <input
                   type="number"
                   value={shares}
-                  onChange={(e) => setShares(e.target.value)}
+                  onChange={(e) => setShares(parseFloat(e.target.value) || 1)}
                   min="1"
                   step="1"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"

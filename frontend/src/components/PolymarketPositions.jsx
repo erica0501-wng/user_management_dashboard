@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { getPolymarketPositions, closePolymarketPosition } from "../services/portfolio"
 
-export default function PolymarketPositions() {
+export default function PolymarketPositions({ onPositionClosed }) {
   const [positions, setPositions] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -38,6 +38,11 @@ export default function PolymarketPositions() {
       const result = await closePolymarketPosition(positionId, currentPrice)
       alert(result.message)
       fetchPositions() // Refresh positions
+      
+      // Notify parent component to refresh balance
+      if (onPositionClosed) {
+        onPositionClosed()
+      }
     } catch (err) {
       alert(`Failed to close position: ${err.message}`)
     } finally {

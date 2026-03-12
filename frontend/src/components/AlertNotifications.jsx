@@ -28,6 +28,12 @@ export default function AlertNotifications() {
         }
       })
 
+      if (response.status === 401) {
+        localStorage.removeItem('token')
+        window.location.href = '/login'
+        return
+      }
+
       if (!response.ok) return
 
       const data = await response.json()

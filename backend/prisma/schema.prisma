@@ -30,6 +30,8 @@ model User {
   watchlistLikes      WatchlistLike[]      @relation("UserLikes")
   polymarketPositions PolymarketPosition[] @relation("PolymarketPositions")
   alerts              Alert[]              @relation("UserAlerts")
+  autoTraders         AutoTrader[]         @relation("UserAutoTraders")
+  notificationSettings NotificationSettings?
 }
 
 model Order {
@@ -181,6 +183,7 @@ model Alert {
   targetPrice Float?     // Target price for price alerts (0-1)
   condition   AlertCondition? // Above or Below for price alerts
   orderBookThreshold Float? // Minimum order book size to trigger (for order book alerts)
+  notificationChannels String[] @default([]) // Channels to notify: email, telegram, discord
   isActive    Boolean    @default(true)
   isTriggered Boolean    @default(false)
   triggeredAt DateTime?  // When the alert was triggered
@@ -196,4 +199,63 @@ enum AlertType {
 enum AlertCondition {
   Above    // Price goes above target
   Below    // Price goes below target
+}
+
+// Notification settings for each user
+model NotificationSettings {
+  id                     Int      @id @default(autoincrement())
+  userId                 Int      @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled           Boolean  @default(true)
+  discordEnabled         Boolean  @default(false)
+  discordWebhookUrl      String?  // Discord webhook URL
+  discordChannelName     String?  // Discord channel name for reference
+  defaultChannels        String[] @default(["email"]) // Default channels for new alerts
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// Auto-trader rules for automated trading
+model AutoTrader {
+  id                Int                @id @default(autoincrement())
+  userId            Int
+  user              User               @relation("UserAutoTraders", fields: [userId], references: [id], onDelete: Cascade)
+  marketId          String             // Polymarket market ID or stock symbol
+  question          String             // Market question/description
+  outcome           String?            // Which outcome to trade (for Polymarket)
+  strategyType      StrategyType       // Type of trading strategy
+  triggerCondition  TriggerCondition   // Condition to trigger trade
+  targetPrice       Float?             // Target price for price-based strategies
+  movingAvgPeriod   Int?               // Period for moving average (e.g., 7 days)
+  action            TradeAction        // Buy or Sell when triggered
+  quantity          Float              // Number of shares to trade
+  maxExecutions     Int                @default(1) // Maximum times this rule can execute
+  executionCount    Int                @default(0) // Times this rule has executed
+  isActive          Boolean            @default(true)
+  notifyOnExecution Boolean            @default(true) // Send notification when trade executes
+  notificationChannels String[]        @default(["email"]) // email, discord
+  lastCheckedAt     DateTime?          // Last time the rule was evaluated
+  lastExecutedAt    DateTime?          // Last time trade was executed
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+enum StrategyType {
+  PriceTarget       // Execute when price reaches target
+  MovingAverage     // Execute when price crosses moving average
+  PriceChange       // Execute when price changes by percentage
+}
+
+enum TriggerCondition {
+  Above             // Price goes above target
+  Below             // Price goes below target
+  CrossAbove        // Price crosses above moving average
+  CrossBelow        // Price crosses below moving average
+  Increase          // Price increases by percentage
+  Decrease          // Price decreases by percentage
+}
+
+enum TradeAction {
+  Buy
+  Sell
 }

@@ -17,6 +17,12 @@ const app = express()
 app.use(cors())                 
 app.use(express.json())
 
+// Log all incoming requests
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path}`)
+  next()
+})
+
 // Explicit CORS headers for Authorization
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*")
@@ -41,6 +47,8 @@ const socialRoutes = require("./routes/social")
 const exportRoutes = require("./routes/export")
 const polymarketRoutes = require("./routes/polymarket")
 const alertRoutes = require("./routes/alert")
+const notificationRoutes = require("./routes/notifications")
+const autotraderRoutes = require("./routes/autotrader")
 
 console.log('🔌 Loading all routes...')
 app.use("/market", marketRoutes)
@@ -52,6 +60,8 @@ app.use("/social", socialRoutes)
 app.use("/export", exportRoutes)
 app.use("/polymarket", polymarketRoutes)
 app.use("/alerts", alertRoutes)
+app.use("/notifications", notificationRoutes)
+app.use("/autotrader", autotraderRoutes)
 console.log('✅ All routes loaded')
 
 /* ========================

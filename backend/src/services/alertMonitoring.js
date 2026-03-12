@@ -1,4 +1,6 @@
 const { PrismaClient } = require("@prisma/client")
+const notificationService = require("./notificationService")
+
 const prisma = new PrismaClient()
 
 /**
@@ -192,6 +194,7 @@ class AlertMonitoringService {
    */
   async triggerAlert(alert, triggerData) {
     try {
+      // Update alert status
       await prisma.alert.update({
         where: { id: alert.id },
         data: {
@@ -200,11 +203,32 @@ class AlertMonitoringService {
         }
       })
 
-      // Here you could add additional actions:
-      // - Send email notification
-      // - Send push notification
-      // - Send webhook
-      // - Log to notification table
+      // Fetch user and notification settings
+      const user = await prisma.user.findUnique({
+        where: { id: alert.userId }
+      })
+
+      const notificationSettings = await prisma.notificationSettings.findUnique({
+        where: { userId: alert.userId }
+      })
+
+      // Send notifications
+      if (user && notificationSettings) {
+        try {
+          const results = await notificationService.sendAlertNotification(
+            user,
+            alert,
+            triggerData,
+            notificationSettings
+          )
+          console.log(`📧 Notifications sent:`, results)
+        } catch (notificationError) {
+          console.error(`❌ Error sending notifications for alert ${alert.id}:`, notificationError)
+          // Don't fail the entire alert trigger if notifications fail
+        }
+      } else {
+        console.log(`⚠️ No notification settings found for user ${alert.userId}, skipping notifications`)
+      }
 
       console.log(`✅ Alert ${alert.id} triggered and saved`)
     } catch (error) {

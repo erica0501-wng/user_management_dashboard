@@ -1,10 +1,60 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Bell, BookOpen } from "lucide-react"
+import { Bell, BookOpen, Bot, X, Pause, Play, Trash2 } from "lucide-react"
 
 export default function PolymarketCard({ market, onTradeComplete }) {
   const [showDetails, setShowDetails] = useState(false)
+  const [showAutoTradeForm, setShowAutoTradeForm] = useState(false)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [existingRules, setExistingRules] = useState([])
+  const [loadingRules, setLoadingRules] = useState(false)
   const navigate = useNavigate()
+  
+  // Auto-trade form state
+  const [autoTradeForm, setAutoTradeForm] = useState({
+    outcome: "Yes",
+    strategyType: "PriceTarget",
+    triggerCondition: "Above",
+    targetPrice: "",
+    movingAvgPeriod: "7",
+    action: "Buy",
+    quantity: "1",
+    maxExecutions: "1",
+    notifyOnExecution: true,
+    notificationChannels: ["email"]
+  })
+  
+  // Fetch existing rules when auto-trade section is opened
+  useEffect(() => {
+    if (showAutoTradeForm) {
+      fetchExistingRules()
+    }
+  }, [showAutoTradeForm])
+  
+  const fetchExistingRules = async () => {
+    setLoadingRules(true)
+    try {
+      const token = localStorage.getItem("token")
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+      
+      const response = await fetch(`${apiUrl}/autotrader`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        // Filter rules for this specific market
+        const marketRules = data.filter(rule => rule.marketId === market.id)
+        setExistingRules(marketRules)
+      }
+    } catch (error) {
+      console.error("Error fetching auto-trade rules:", error)
+    } finally {
+      setLoadingRules(false)
+    }
+  }
 
   // 格式化日期
   const formatDate = (dateString) => {
@@ -93,6 +143,133 @@ export default function PolymarketCard({ market, onTradeComplete }) {
   
   // State to track image load status
   const [imageLoaded, setImageLoaded] = useState(true)
+  
+  // Handle auto-trade form submission
+  const handleCreateAutoTrade = async (e) => {
+    e.preventDefault()
+    
+    try {
+      const token = localStorage.getItem("token")
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+      
+      const payload = {
+        marketId: market.id,
+        question: market.question,
+        ...autoTradeForm
+      }
+      
+      console.log("📤 Sending auto-trade payload:", payload)
+      
+      const response = await fetch(`${apiUrl}/autotrader`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+      
+      const data = await response.json()
+      
+      console.log("📥 Response from server:", { 
+        status: response.status, 
+        ok: response.ok,
+        data: data,
+        error: data.error,
+        details: data.details
+      })
+      
+      if (!response.ok) {
+        const errorMsg = data.details || data.error || "Failed to create auto-trade rule"
+        console.error("❌ Server error:", errorMsg)
+        throw new Error(errorMsg)
+      }
+      
+      alert("✅ Auto-trade rule created successfully!")
+      setShowCreateForm(false)
+      fetchExistingRules() // Refresh the list
+      
+      // Reset form
+      setAutoTradeForm({
+        outcome: "Yes",
+        strategyType: "PriceTarget",
+        triggerCondition: "Above",
+        targetPrice: "",
+        movingAvgPeriod: "7",
+        action: "Buy",
+        quantity: "1",
+        maxExecutions: "1",
+        notifyOnExecution: true,
+        notificationChannels: ["email"]
+      })
+    } catch (error) {
+      console.error("Error creating auto-trade:", error)
+      alert("❌ " + error.message)
+    }
+  }
+  
+  // Toggle rule (pause/resume)
+  const handleToggleRule = async (ruleId) => {
+    try {
+      const token = localStorage.getItem("token")
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+      
+      const response = await fetch(`${apiUrl}/autotrader/${ruleId}/toggle`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error("Failed to toggle rule")
+      }
+      
+      fetchExistingRules() // Refresh the list
+    } catch (error) {
+      console.error("Error toggling rule:", error)
+      alert("❌ " + error.message)
+    }
+  }
+  
+  // Delete rule
+  const handleDeleteRule = async (ruleId) => {
+    if (!confirm("Are you sure you want to delete this rule?")) {
+      return
+    }
+    
+    try {
+      const token = localStorage.getItem("token")
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+      
+      const response = await fetch(`${apiUrl}/autotrader/${ruleId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error("Failed to delete rule")
+      }
+      
+      alert("✅ Rule deleted successfully!")
+      fetchExistingRules() // Refresh the list
+    } catch (error) {
+      console.error("Error deleting rule:", error)
+      alert("❌ " + error.message)
+    }
+  }
+  
+  // Format strategy details for display
+  const formatStrategyDetails = (rule) => {
+    if (rule.strategyType === "PriceTarget") {
+      return `${rule.triggerCondition} ${parseFloat(rule.targetPrice).toFixed(2)}`
+    } else if (rule.strategyType === "MovingAverage") {
+      return `${rule.triggerCondition} ${rule.movingAvgPeriod}d MA`
+    }
+    return rule.strategyType
+  }
   
   // Get category gradient
   const getCategoryGradient = () => {
@@ -205,26 +382,38 @@ export default function PolymarketCard({ market, onTradeComplete }) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2">
+        <div className="space-y-2">
+          {/* First row: Details and primary actions */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+            >
+              {showDetails ? "Hide" : "Details"}
+            </button>
+            <button
+              onClick={() => navigate(`/polymarket/details/${market.id}`)}
+              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium flex items-center gap-2"
+              title="View Alerts & Order Book"
+            >
+              <Bell className="w-4 h-4" />
+              <BookOpen className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => navigate(`/polymarket/trade/${market.id}`)}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Trade
+            </button>
+          </div>
+          
+          {/* Second row: Auto-Trade button */}
           <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+            onClick={() => setShowAutoTradeForm(!showAutoTradeForm)}
+            className="w-full px-4 py-2 border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
           >
-            {showDetails ? "Hide" : "Details"}
-          </button>
-          <button
-            onClick={() => navigate(`/polymarket/details/${market.id}`)}
-            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium flex items-center gap-2"
-            title="View Alerts & Order Book"
-          >
-            <Bell className="w-4 h-4" />
-            <BookOpen className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => navigate(`/polymarket/trade/${market.id}`)}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            Trade
+            <Bot className="w-4 h-4" />
+            {showAutoTradeForm ? "Hide Auto-Trade" : "Create Auto-Trade Rule"}
           </button>
         </div>
 
@@ -234,6 +423,346 @@ export default function PolymarketCard({ market, onTradeComplete }) {
             <p className="text-sm text-gray-600 leading-relaxed">
               {market.description}
             </p>
+          </div>
+        )}
+
+        {/* Auto-Trade Section */}
+        {showAutoTradeForm && (
+          <div className="mt-4 pt-4 border-t-2 border-purple-100 bg-purple-50 -mx-5 px-5 pb-5 rounded-b-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
+                <Bot className="w-5 h-5" />
+                Auto-Trade Rules
+              </h4>
+              <button
+                onClick={() => {
+                  setShowAutoTradeForm(false)
+                  setShowCreateForm(false)
+                }}
+                className="text-purple-600 hover:text-purple-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Loading State */}
+            {loadingRules && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+              </div>
+            )}
+
+            {/* Existing Rules List */}
+            {!loadingRules && !showCreateForm && (
+              <div className="space-y-3">
+                {existingRules.length > 0 ? (
+                  <>
+                    <div className="text-sm text-gray-600 mb-3">
+                      {existingRules.length} rule{existingRules.length !== 1 ? 's' : ''} for this market
+                    </div>
+                    
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {existingRules.map((rule) => (
+                        <div key={rule.id} className="bg-white p-3 rounded-lg border border-purple-200">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  rule.isActive 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {rule.isActive ? 'Active' : 'Paused'}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {rule.outcome}
+                                </span>
+                              </div>
+                              
+                              <div className="text-sm font-medium text-gray-900">
+                                {rule.action} {rule.quantity} shares
+                              </div>
+                              
+                              <div className="text-xs text-gray-600 mt-1">
+                                Strategy: {rule.strategyType} - {formatStrategyDetails(rule)}
+                              </div>
+                              
+                              <div className="text-xs text-gray-500 mt-1">
+                                Executed: {rule.executionCount} / {rule.maxExecutions === 0 ? '∞' : rule.maxExecutions}
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-1 ml-2">
+                              <button
+                                onClick={() => handleToggleRule(rule.id)}
+                                className={`p-1.5 rounded hover:bg-gray-100 ${
+                                  rule.isActive ? 'text-yellow-600' : 'text-green-600'
+                                }`}
+                                title={rule.isActive ? 'Pause' : 'Resume'}
+                              >
+                                {rule.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRule(rule.id)}
+                                className="p-1.5 rounded hover:bg-gray-100 text-red-600"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Bot className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">No auto-trade rules for this market yet</p>
+                  </div>
+                )}
+                
+                {/* Create New Rule Button */}
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2 mt-4"
+                >
+                  <Bot className="w-4 h-4" />
+                  Create New Rule
+                </button>
+              </div>
+            )}
+
+            {/* Create Form */}
+            {!loadingRules && showCreateForm && (
+              <form onSubmit={handleCreateAutoTrade} className="space-y-4">
+              {/* Market Info (Read-only) */}
+              <div className="bg-white p-3 rounded-lg border border-purple-200">
+                <div className="text-xs text-gray-500 mb-1">Market</div>
+                <div className="text-sm font-medium text-gray-900 line-clamp-2">
+                  {market.question}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">ID: {market.id}</div>
+              </div>
+
+              {/* Outcome */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Outcome
+                </label>
+                <select
+                  value={autoTradeForm.outcome}
+                  onChange={(e) => setAutoTradeForm({ ...autoTradeForm, outcome: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+
+              {/* Strategy Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Strategy Type
+                </label>
+                <select
+                  value={autoTradeForm.strategyType}
+                  onChange={(e) => {
+                    const newStrategy = e.target.value
+                    setAutoTradeForm({
+                      ...autoTradeForm,
+                      strategyType: newStrategy,
+                      triggerCondition: newStrategy === "PriceTarget" ? "Above" : "CrossAbove"
+                    })
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="PriceTarget">Price Target</option>
+                  <option value="MovingAverage">Moving Average</option>
+                </select>
+              </div>
+
+              {/* Trigger Condition */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Trigger Condition
+                </label>
+                <select
+                  value={autoTradeForm.triggerCondition}
+                  onChange={(e) => setAutoTradeForm({ ...autoTradeForm, triggerCondition: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  {autoTradeForm.strategyType === "PriceTarget" ? (
+                    <>
+                      <option value="Above">Above</option>
+                      <option value="Below">Below</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="CrossAbove">Cross Above</option>
+                      <option value="CrossBelow">Cross Below</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Target Price (for Price Target strategy) */}
+              {autoTradeForm.strategyType === "PriceTarget" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Target Price (0-1)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={autoTradeForm.targetPrice}
+                    onChange={(e) => setAutoTradeForm({ ...autoTradeForm, targetPrice: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0.75"
+                    required
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Example: 0.75 = 75%
+                  </div>
+                </div>
+              )}
+
+              {/* Moving Average Period (for MA strategy) */}
+              {autoTradeForm.strategyType === "MovingAverage" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Moving Average Period (days)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={autoTradeForm.movingAvgPeriod}
+                    onChange={(e) => setAutoTradeForm({ ...autoTradeForm, movingAvgPeriod: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="7"
+                    required
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Example: 7 for 7-day moving average
+                  </div>
+                </div>
+              )}
+
+              {/* Action */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Action
+                </label>
+                <select
+                  value={autoTradeForm.action}
+                  onChange={(e) => setAutoTradeForm({ ...autoTradeForm, action: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="Buy">Buy</option>
+                  <option value="Sell">Sell</option>
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity (shares)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={autoTradeForm.quantity}
+                  onChange={(e) => setAutoTradeForm({ ...autoTradeForm, quantity: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="10"
+                  required
+                />
+              </div>
+
+              {/* Max Executions */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Executions
+                </label>
+                <select
+                  value={autoTradeForm.maxExecutions}
+                  onChange={(e) => setAutoTradeForm({ ...autoTradeForm, maxExecutions: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="1">1 time</option>
+                  <option value="5">5 times</option>
+                  <option value="10">10 times</option>
+                  <option value="0">Unlimited</option>
+                </select>
+                <div className="text-xs text-gray-500 mt-1">
+                  How many times this rule can execute
+                </div>
+              </div>
+
+              {/* Notification Channels */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notifications
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={autoTradeForm.notificationChannels.includes("email")}
+                      onChange={(e) => {
+                        const channels = e.target.checked
+                          ? [...autoTradeForm.notificationChannels, "email"]
+                          : autoTradeForm.notificationChannels.filter(c => c !== "email")
+                        setAutoTradeForm({ ...autoTradeForm, notificationChannels: channels })
+                      }}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Email</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={autoTradeForm.notificationChannels.includes("discord")}
+                      onChange={(e) => {
+                        const channels = e.target.checked
+                          ? [...autoTradeForm.notificationChannels, "discord"]
+                          : autoTradeForm.notificationChannels.filter(c => c !== "discord")
+                        setAutoTradeForm({ ...autoTradeForm, notificationChannels: channels })
+                      }}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Discord</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <Bot className="w-4 h-4" />
+                  Create Rule
+                </button>
+              </div>
+            </form>
+            )}
           </div>
         )}
 

@@ -518,9 +518,24 @@ router.post("/trade", authenticate, async (req, res) => {
       }
     })
 
+    // Create order record for transaction history
+    const order = await prisma.order.create({
+      data: {
+        userId,
+        symbol: marketId,
+        name: `${question} - ${outcome}`,
+        direction: "Buy",
+        price: priceNum,
+        quantity: Math.floor(sharesNum),
+        orderType: "Market",
+        status: "Filled"
+      }
+    })
+
     res.json({
       success: true,
       position,
+      order,
       message: `Successfully purchased ${sharesNum} shares of "${outcome}" for $${totalCost.toFixed(2)}`
     })
   } catch (error) {
@@ -636,12 +651,27 @@ router.post("/positions/:id/close", authenticate, async (req, res) => {
       }
     })
 
+    // Create order record for sell transaction
+    const order = await prisma.order.create({
+      data: {
+        userId,
+        symbol: position.marketId,
+        name: `${position.question} - ${position.outcome}`,
+        direction: "Sell",
+        price: closePriceNum,
+        quantity: Math.floor(position.shares),
+        orderType: "Market",
+        status: "Filled"
+      }
+    })
+
     res.json({
       success: true,
       message: `Position closed. P&L: $${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`,
       proceeds,
       pnl,
-      pnlPercent
+      pnlPercent,
+      order
     })
   } catch (error) {
     console.error("❌ Polymarket Close Position Error:", error)

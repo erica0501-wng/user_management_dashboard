@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react"
-import { Bell, Plus, Trash2, ToggleLeft, ToggleRight, TrendingUp, BookOpen } from "lucide-react"
+import { Bell, Plus, Trash2, ToggleLeft, ToggleRight, TrendingUp, BookOpen, Mail, Hash } from "lucide-react"
 
 export default function AlertManager({ marketId, question, outcomes, currentPrices }) {
   const [alerts, setAlerts] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [notificationSettings, setNotificationSettings] = useState(null)
   
   // Form state
   const [alertType, setAlertType] = useState("Price")
@@ -13,9 +14,11 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
   const [targetPrice, setTargetPrice] = useState("")
   const [condition, setCondition] = useState("Above")
   const [orderBookThreshold, setOrderBookThreshold] = useState("")
+  const [notificationChannels, setNotificationChannels] = useState([])
 
   useEffect(() => {
     fetchAlerts()
+    fetchNotificationSettings()
   }, [marketId])
 
   useEffect(() => {
@@ -23,6 +26,29 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
       setSelectedOutcome(outcomes[0])
     }
   }, [outcomes, selectedOutcome])
+
+  const fetchNotificationSettings = async () => {
+    try {
+      const token = localStorage.getItem("token")
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
+
+      const response = await fetch(`${apiUrl}/notifications/settings`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setNotificationSettings(data.settings)
+        // Set default channels from settings
+        setNotificationChannels(data.settings?.defaultChannels || ["email"])
+      }
+    } catch (err) {
+      console.error("Error fetching notification settings:", err)
+      setNotificationChannels(["email"]) // Fallback to email only
+    }
+  }
 
   const fetchAlerts = async () => {
     try {
@@ -59,7 +85,8 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
         marketId,
         question,
         outcome: selectedOutcome,
-        alertType
+        alertType,
+        notificationChannels
       }
 
       if (alertType === "Price") {
@@ -141,7 +168,29 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
     setTargetPrice("")
     setCondition("Above")
     setOrderBookThreshold("")
+    setNotificationChannels(notificationSettings?.defaultChannels || ["email"])
     setError("")
+  }
+
+  const toggleNotificationChannel = (channel) => {
+    if (notificationChannels.includes(channel)) {
+      setNotificationChannels(notificationChannels.filter(c => c !== channel))
+    } else {
+      setNotificationChannels([...notificationChannels, channel])
+    }
+  }
+
+  const isChannelAvailable = (channel) => {
+    if (!notificationSettings) return false
+    
+    switch (channel) {
+      case "email":
+        return notificationSettings.emailEnabled
+      case "discord":
+        return notificationSettings.discordEnabled && notificationSettings.discordWebhookUrl
+      default:
+        return false
+    }
   }
 
   const getCurrentPrice = () => {
@@ -367,6 +416,57 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
               </div>
             )}
 
+            {/* Notification Channels */}
+            <div className="mb-4 pb-4 border-t pt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Notification Channels
+              </label>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${
+                  isChannelAvailable("email") ? "hover:bg-gray-50" : "opacity-50 cursor-not-allowed"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={notificationChannels.includes("email")}
+                    onChange={() => toggleNotificationChannel("email")}
+                    disabled={!isChannelAvailable("email")}
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                  <Mail className="w-5 h-5 text-blue-600" />
+                  <span className="text-sm text-gray-700">Email</span>
+                  {!isChannelAvailable("email") && (
+                    <span className="text-xs text-gray-500 ml-auto">(Disabled)</span>
+                  )}
+                </label>
+
+                <label className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition ${
+                  isChannelAvailable("discord") ? "hover:bg-gray-50" : "opacity-50 cursor-not-allowed"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={notificationChannels.includes("discord")}
+                    onChange={() => toggleNotificationChannel("discord")}
+                    disabled={!isChannelAvailable("discord")}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <Hash className="w-5 h-5 text-indigo-600" />
+                  <span className="text-sm text-gray-700">Discord</span>
+                  {!isChannelAvailable("discord") && (
+                    <span className="text-xs text-gray-500 ml-auto">(Not configured)</span>
+                  )}
+                </label>
+              </div>
+              {notificationChannels.length === 0 && (
+                <p className="text-xs text-red-600 mt-2">
+                  Please select at least one notification channel
+                </p>
+              )}
+              <p className="text-xs text-gray-500 mt-2">
+                Configure channels in{" "}
+                <a href="/settings" className="text-blue-600 hover:underline">Settings</a>
+              </p>
+            </div>
+
             {/* Action Buttons */}
             <div className="flex gap-3 mt-6">
               <button
@@ -382,7 +482,7 @@ export default function AlertManager({ marketId, question, outcomes, currentPric
               <button
                 onClick={createAlert}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                disabled={loading}
+                disabled={loading || notificationChannels.length === 0}
               >
                 {loading ? "Creating..." : "Create Alert"}
               </button>

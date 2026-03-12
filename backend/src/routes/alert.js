@@ -46,7 +46,8 @@ router.post("/", authenticate, async (req, res) => {
       alertType,
       targetPrice,
       condition,
-      orderBookThreshold
+      orderBookThreshold,
+      notificationChannels
     } = req.body
 
     // Validate required fields
@@ -55,6 +56,18 @@ router.post("/", authenticate, async (req, res) => {
         success: false,
         error: "Missing required fields: marketId, question, outcome, alertType"
       })
+    }
+
+    // Validate notification channels if provided
+    if (notificationChannels) {
+      const validChannels = ["email", "discord"]
+      const invalidChannels = notificationChannels.filter(c => !validChannels.includes(c))
+      if (invalidChannels.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid notification channels: ${invalidChannels.join(", ")}`
+        })
+      }
     }
 
     // Validate alert type specific fields
@@ -108,6 +121,7 @@ router.post("/", authenticate, async (req, res) => {
         targetPrice: alertType === "Price" ? targetPrice : null,
         condition: alertType === "Price" ? condition : null,
         orderBookThreshold: alertType === "OrderBook" ? orderBookThreshold : null,
+        notificationChannels: notificationChannels || [],
         isActive: true,
         isTriggered: false
       }

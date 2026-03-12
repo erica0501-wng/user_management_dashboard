@@ -9,6 +9,12 @@ export const getWatchlist = async () => {
     }
   });
   
+  if (response.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    return;
+  }
+  
   if (!response.ok) {
     throw new Error('Failed to fetch watchlist');
   }

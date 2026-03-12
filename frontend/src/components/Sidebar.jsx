@@ -13,7 +13,8 @@ export default function Sidebar() {
     { id: "portfolio", label: "Portfolio", path: "/portfolio" },
     { id: "polymarket", label: "Polymarket", path: "/polymarket" },
     { id: "community", label: "Community", path: "/community" },
-    { id: "users", label: "Users Management", path: "/users" }
+    { id: "users", label: "Users Management", path: "/users" },
+    { id: "settings", label: "Settings", path: "/settings" }
   ]
 
   // Update active state based on current path
