@@ -538,76 +538,151 @@ export default function AutoTrader() {
               <p className="text-sm">Create your first rule to start automated trading</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Market</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Strategy</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trigger</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Executions</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {autoTraders.map((trader) => (
-                    <tr key={trader.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        {getStatusBadge(trader)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{trader.question}</div>
-                        <div className="text-sm text-gray-500">{trader.outcome}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {trader.strategyType}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {getTriggerDescription(trader)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          trader.action === "Buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                        }`}>
-                          {trader.action} {trader.quantity}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {trader.executionCount} / {trader.maxExecutions === -1 ? "∞" : trader.maxExecutions}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleToggle(trader.id)}
-                            className={`px-3 py-1 text-xs rounded ${
-                              trader.isActive
-                                ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
-                                : "bg-green-100 text-green-700 hover:bg-green-200"
-                            }`}
-                          >
-                            {trader.isActive ? "Pause" : "Resume"}
-                          </button>
-                          <button
-                            onClick={() => handleReset(trader.id)}
-                            className="px-3 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
-                          >
-                            Reset
-                          </button>
-                          <button
-                            onClick={() => handleDelete(trader.id)}
-                            className="px-3 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+            <>
+              {/* Desktop Table View - Hidden on mobile */}
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Market</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Strategy</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Executions</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {autoTraders.map((trader) => (
+                      <tr key={trader.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          {getStatusBadge(trader)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900 text-sm">{trader.question}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500">{trader.outcome}</span>
+                            <span className="text-xs text-gray-400">•</span>
+                            <span className="text-xs text-gray-500">{getTriggerDescription(trader)}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {trader.strategyType}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            trader.action === "Buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          }`}>
+                            {trader.action} {trader.quantity}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm text-gray-600">
+                          {trader.executionCount} / {trader.maxExecutions === -1 ? "∞" : trader.maxExecutions}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2 justify-center">
+                            <button
+                              onClick={() => handleToggle(trader.id)}
+                              className={`px-3 py-1 text-xs rounded ${
+                                trader.isActive
+                                  ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                                  : "bg-green-100 text-green-700 hover:bg-green-200"
+                              }`}
+                            >
+                              {trader.isActive ? "Pause" : "Resume"}
+                            </button>
+                            <button
+                              onClick={() => handleReset(trader.id)}
+                              className="px-3 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                            >
+                              Reset
+                            </button>
+                            <button
+                              onClick={() => handleDelete(trader.id)}
+                              className="px-3 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View - Shown on mobile and tablet */}
+              <div className="lg:hidden p-4 space-y-4">
+                {autoTraders.map((trader) => (
+                  <div key={trader.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    {/* Header */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-medium text-gray-900 mb-2">
+                          {trader.question}
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {getStatusBadge(trader)}
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            trader.action === "Buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          }`}>
+                            {trader.action} {trader.quantity}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Outcome</div>
+                        <div className="font-medium text-gray-900">{trader.outcome}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Strategy</div>
+                        <div className="font-medium text-gray-900">{trader.strategyType}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Trigger</div>
+                        <div className="font-medium text-gray-900">{getTriggerDescription(trader)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Executions</div>
+                        <div className="font-medium text-gray-900">
+                          {trader.executionCount} / {trader.maxExecutions === -1 ? "∞" : trader.maxExecutions}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-3 border-t border-gray-200">
+                      <button
+                        onClick={() => handleToggle(trader.id)}
+                        className={`flex-1 px-3 py-2 text-xs rounded font-medium ${
+                          trader.isActive
+                            ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                            : "bg-green-100 text-green-700 hover:bg-green-200"
+                        }`}
+                      >
+                        {trader.isActive ? "Pause" : "Resume"}
+                      </button>
+                      <button
+                        onClick={() => handleReset(trader.id)}
+                        className="flex-1 px-3 py-2 text-xs rounded font-medium bg-blue-100 text-blue-700 hover:bg-blue-200"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        onClick={() => handleDelete(trader.id)}
+                        className="flex-1 px-3 py-2 text-xs rounded font-medium bg-red-100 text-red-700 hover:bg-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
