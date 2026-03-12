@@ -71,8 +71,15 @@ export default function PolymarketPositions({ onPositionClosed }) {
       return null
     }
     const currentValue = position.shares * position.currentPrice
-    const pnl = currentValue - position.totalCost
-    const pnlPercent = (pnl / position.totalCost) * 100
+    let pnl = currentValue - position.totalCost
+    let pnlPercent = (pnl / position.totalCost) * 100
+    
+    // Fix floating point precision issue: treat very small values as zero
+    if (Math.abs(pnl) < 0.005) { // Less than half a cent
+      pnl = 0
+      pnlPercent = 0
+    }
+    
     return { pnl, pnlPercent }
   }
 
@@ -221,11 +228,17 @@ export default function PolymarketPositions({ onPositionClosed }) {
                         <td className="px-3 py-3 text-right">
                           {pnlData ? (
                             <div>
-                              <div className={`text-sm font-medium ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              <div className={`text-sm font-medium ${
+                                pnlData.pnl === 0 ? 'text-gray-600' : 
+                                pnlData.pnl > 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
                                 ${pnlData.pnl.toFixed(2)}
                               </div>
-                              <div className={`text-xs ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                ({pnlData.pnlPercent >= 0 ? '+' : ''}{pnlData.pnlPercent.toFixed(1)}%)
+                              <div className={`text-xs ${
+                                pnlData.pnl === 0 ? 'text-gray-600' : 
+                                pnlData.pnl > 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                ({pnlData.pnl > 0 ? '+' : ''}{pnlData.pnlPercent.toFixed(1)}%)
                               </div>
                             </div>
                           ) : (
@@ -317,11 +330,17 @@ export default function PolymarketPositions({ onPositionClosed }) {
                       <div className="text-xs text-gray-500 mb-1">P&L</div>
                       {pnlData ? (
                         <div>
-                          <div className={`text-sm font-medium ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <div className={`text-sm font-medium ${
+                            pnlData.pnl === 0 ? 'text-gray-600' : 
+                            pnlData.pnl > 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
                             ${pnlData.pnl.toFixed(2)}
                           </div>
-                          <div className={`text-xs ${pnlData.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ({pnlData.pnlPercent >= 0 ? '+' : ''}{pnlData.pnlPercent.toFixed(1)}%)
+                          <div className={`text-xs ${
+                            pnlData.pnl === 0 ? 'text-gray-600' : 
+                            pnlData.pnl > 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            ({pnlData.pnl > 0 ? '+' : ''}{pnlData.pnlPercent.toFixed(1)}%)
                           </div>
                         </div>
                       ) : (
