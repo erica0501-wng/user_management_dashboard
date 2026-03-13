@@ -134,6 +134,29 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ error: "Invalid trigger condition for MovingAverage strategy" })
     }
 
+    // Prevent duplicate active rules that would trigger repeated executions/notifications
+    const duplicateRule = await prisma.autoTrader.findFirst({
+      where: {
+        userId,
+        marketId: String(marketId),
+        outcome: outcome || null,
+        strategyType,
+        triggerCondition,
+        action,
+        quantity: parseFloat(quantity),
+        targetPrice: targetPrice ? parseFloat(targetPrice) : null,
+        movingAvgPeriod: movingAvgPeriod ? parseInt(movingAvgPeriod) : null,
+        isActive: true
+      }
+    })
+
+    if (duplicateRule) {
+      return res.status(409).json({
+        error: "A matching active auto-trader rule already exists",
+        existingRuleId: duplicateRule.id
+      })
+    }
+
     // Log the data being sent to Prisma
     console.log("🔍 Creating auto-trader with data:", {
       userId,
