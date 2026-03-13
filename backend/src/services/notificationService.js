@@ -9,17 +9,27 @@ class NotificationService {
   constructor() {
     // Initialize email transporter (using environment variables for config)
     this.emailTransporter = null
-    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const smtpHost = (process.env.SMTP_HOST || "").trim()
+    const smtpPort = (process.env.SMTP_PORT || "587").trim()
+    const smtpSecure = (process.env.SMTP_SECURE || "false").trim()
+    const smtpUser = (process.env.SMTP_USER || "").trim()
+    const smtpPass = (process.env.SMTP_PASS || "").trim()
+
+    if (smtpHost && smtpUser && smtpPass) {
       this.emailTransporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: process.env.SMTP_SECURE === "true",
+        host: smtpHost,
+        port: parseInt(smtpPort),
+        secure: smtpSecure === "true",
         auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS
+          user: smtpUser,
+          pass: smtpPass
         }
       })
     }
+  }
+
+  getFromAddress() {
+    return ((process.env.SMTP_FROM || process.env.SMTP_USER || "").trim())
   }
 
   /**
@@ -147,7 +157,7 @@ This is an automated alert from your Polymarket Alert System.
     `
 
     await this.emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      from: this.getFromAddress(),
       to: email,
       subject: content.subject,
       text: textContent,
@@ -344,7 +354,7 @@ This is an automated notification from your Auto-Trader System.
     `
 
     await this.emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      from: this.getFromAddress(),
       to: email,
       subject: content.subject,
       text: textContent,
@@ -531,7 +541,7 @@ This is an automated notification from your trading dashboard.
     `
 
     await this.emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      from: this.getFromAddress(),
       to: email,
       subject: content.subject,
       text: textContent,
