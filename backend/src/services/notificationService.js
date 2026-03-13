@@ -436,6 +436,162 @@ This is an automated notification from your Auto-Trader System.
 
     console.log(`✅ Auto-trade Discord notification sent`)
   }
+
+  /**
+   * Send generic activity notification for user actions (buy/sell/bet/rule updates)
+   */
+  async sendActivityNotification(user, activity, notificationSettings, channels = null) {
+    const notifications = []
+    const selectedChannels = channels && channels.length > 0
+      ? channels
+      : ["email", "discord"]
+
+    const content = this.formatActivityNotification(activity)
+
+    for (const channel of selectedChannels) {
+      try {
+        if (channel === "email" && notificationSettings?.emailEnabled) {
+          await this.sendActivityEmail(user.email, content)
+          notifications.push({ channel: "email", success: true })
+        } else if (channel === "discord" && notificationSettings?.discordEnabled && notificationSettings?.discordWebhookUrl) {
+          await this.sendActivityDiscord(notificationSettings.discordWebhookUrl, content)
+          notifications.push({ channel: "discord", success: true })
+        }
+      } catch (error) {
+        console.error(`❌ Error sending ${channel} activity notification:`, error)
+        notifications.push({ channel, success: false, error: error.message })
+      }
+    }
+
+    return notifications
+  }
+
+  /**
+   * Normalize user activity payload
+   */
+  formatActivityNotification(activity) {
+    return {
+      subject: activity.subject || "Account Activity Update",
+      title: activity.title || "Account Activity",
+      description: activity.description || "A new account activity was detected.",
+      details: activity.details || {},
+      actionLabel: activity.actionLabel || "Open Dashboard",
+      actionUrl: activity.actionUrl || "http://localhost:5173",
+      color: activity.color || 0x2563EB
+    }
+  }
+
+  /**
+   * Send activity email notification
+   */
+  async sendActivityEmail(email, content) {
+    if (!this.emailTransporter) {
+      console.log("⚠️ Email transporter not configured, skipping email notification")
+      return
+    }
+
+    const detailRows = Object.entries(content.details)
+      .map(([key, value]) => `<p><strong>${key}:</strong> ${value}</p>`)
+      .join("\n")
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563EB;">🔔 ${content.title}</h2>
+        <div style="background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p>${content.description}</p>
+          ${detailRows}
+        </div>
+        <div style="margin: 20px 0;">
+          <a href="${content.actionUrl}" 
+             style="background-color: #2563EB; color: white; padding: 12px 24px; 
+                    text-decoration: none; border-radius: 6px; display: inline-block;">
+            ${content.actionLabel}
+          </a>
+        </div>
+        <p style="color: #6B7280; font-size: 14px;">
+          This is an automated notification from your trading dashboard.
+        </p>
+      </div>
+    `
+
+    const textDetails = Object.entries(content.details)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n")
+
+    const textContent = `
+${content.title}
+
+${content.description}
+
+${textDetails}
+
+${content.actionLabel}: ${content.actionUrl}
+
+This is an automated notification from your trading dashboard.
+    `
+
+    await this.emailTransporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: content.subject,
+      text: textContent,
+      html: htmlContent
+    })
+
+    console.log(`✅ Activity email sent to ${email}`)
+  }
+
+  /**
+   * Send activity Discord notification
+   */
+  async sendActivityDiscord(webhookUrl, content) {
+    const fields = Object.entries(content.details).map(([key, value]) => ({
+      name: key,
+      value: String(value),
+      inline: true
+    }))
+
+    const embed = {
+      title: `🔔 ${content.title}`,
+      description: content.description,
+      color: content.color,
+      fields,
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: "Trading Dashboard"
+      }
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        embeds: [embed],
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 5,
+                label: content.actionLabel,
+                url: content.actionUrl
+              }
+            ]
+          }
+        ]
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Discord webhook error: ${error}`)
+    }
+
+    console.log("✅ Activity Discord notification sent")
+  }
 }
 
 module.exports = new NotificationService()

@@ -2,6 +2,23 @@ const express = require('express')
 const router = express.Router()
 const prisma = require('../prisma')
 const authenticateToken = require('../middleware/auth')
+const notificationService = require('../services/notificationService')
+
+const dashboardBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+async function sendPortfolioActivityNotification(userId, activity, channels = null) {
+  try {
+    const [user, notificationSettings] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.notificationSettings.findUnique({ where: { userId } })
+    ])
+
+    if (!user || !notificationSettings) return
+    await notificationService.sendActivityNotification(user, activity, notificationSettings, channels)
+  } catch (error) {
+    console.error('Portfolio notification error:', error.message)
+  }
+}
 
 // Get user's account balance
 router.get('/balance', authenticateToken, async (req, res) => {
@@ -253,6 +270,25 @@ router.post('/orders', authenticateToken, async (req, res) => {
       }
     })
 
+    const orderValue = parseFloat(price) * parseFloat(quantity)
+    await sendPortfolioActivityNotification(userId, {
+      subject: `📌 Order Placed: ${direction} ${symbol}`,
+      title: 'Stock Order Placed',
+      description: `Your ${direction} order has been submitted successfully.`,
+      details: {
+        Symbol: symbol,
+        Side: direction,
+        Quantity: parseInt(quantity),
+        Price: `$${parseFloat(price).toFixed(2)}`,
+        Type: orderType || 'Limit',
+        Status: 'Pending',
+        Total: `$${orderValue.toFixed(2)}`
+      },
+      actionLabel: 'View Portfolio',
+      actionUrl: `${dashboardBaseUrl}/portfolio`,
+      color: 0x2563EB
+    })
+
     res.status(201).json(order)
   } catch (error) {
     console.error('Create order error:', error)
@@ -306,6 +342,23 @@ router.patch('/orders/:id', authenticateToken, async (req, res) => {
         }
       })
     }
+
+    await sendPortfolioActivityNotification(userId, {
+      subject: `✅ Order ${status}: ${order.direction} ${order.symbol}`,
+      title: `Stock Order ${status}`,
+      description: `Your ${order.direction} order has been marked as ${status}.`,
+      details: {
+        Symbol: order.symbol,
+        Side: order.direction,
+        Quantity: order.quantity,
+        Price: `$${order.price.toFixed(2)}`,
+        Status: status,
+        Total: `$${(order.price * order.quantity).toFixed(2)}`
+      },
+      actionLabel: 'View Orders',
+      actionUrl: `${dashboardBaseUrl}/portfolio`,
+      color: status === 'Filled' ? 0x10B981 : 0xF59E0B
+    })
 
     res.json(updatedOrder)
   } catch (error) {

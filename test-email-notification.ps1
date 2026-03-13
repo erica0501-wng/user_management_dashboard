@@ -84,8 +84,16 @@ try {
     Write-Host "   Test notification sent successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "   Notification Results:" -ForegroundColor Cyan
-    
-    foreach ($notification in $response.notifications) {
+
+    # Current API returns results, older scripts used notifications
+    $notificationResults = @()
+    if ($response.results) {
+        $notificationResults = $response.results
+    } elseif ($response.notifications) {
+        $notificationResults = $response.notifications
+    }
+
+    foreach ($notification in $notificationResults) {
         if ($notification.success) {
             Write-Host "      $($notification.channel): Success" -ForegroundColor Green
         } else {

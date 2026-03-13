@@ -9,6 +9,7 @@ export default function Polymarket() {
   const [category, setCategory] = useState("all") // all, crypto, politics, sports, tech, finance, entertainment
   const [searchQuery, setSearchQuery] = useState("")
   const [dataSource, setDataSource] = useState(null)
+  const discordInviteUrl = import.meta.env.VITE_DISCORD_INVITE_URL || ""
 
   useEffect(() => {
     fetchMarkets()
@@ -95,19 +96,42 @@ export default function Polymarket() {
     }
   }
 
+  const handleJoinDiscord = () => {
+    if (!discordInviteUrl) return
+    window.open(discordInviteUrl, "_blank", "noopener,noreferrer")
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
       <main className="flex-1 ml-64 p-8">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Polymarket Prediction Markets
-          </h1>
-          <p className="text-gray-600">
-            Explore and bet on real-world events
-          </p>
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Polymarket Prediction Markets
+            </h1>
+            <p className="text-gray-600">
+              Explore and bet on real-world events
+            </p>
+          </div>
+          <div className="flex flex-col items-start md:items-end gap-2">
+            <button
+              onClick={handleJoinDiscord}
+              disabled={!discordInviteUrl}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              title={discordInviteUrl ? "Join Discord for live notifications" : "Set VITE_DISCORD_INVITE_URL in frontend .env"}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.317 4.369A19.791 19.791 0 0 0 15.885 3c-.191.328-.404.768-.553 1.11a18.27 18.27 0 0 0-5.44 0A11.64 11.64 0 0 0 9.339 3a19.736 19.736 0 0 0-4.434 1.371C2.098 8.532 1.337 12.59 1.71 16.591a19.935 19.935 0 0 0 5.992 3.032 14.08 14.08 0 0 0 1.283-2.093 12.96 12.96 0 0 1-2.017-.964c.169-.121.334-.248.495-.38 3.887 1.824 8.105 1.824 11.946 0 .162.133.327.26.495.38a12.97 12.97 0 0 1-2.021.966c.36.743.79 1.442 1.284 2.091a19.905 19.905 0 0 0 5.994-3.03c.437-4.64-.76-8.66-3.849-12.224zM8.02 14.223c-1.182 0-2.154-1.085-2.154-2.422 0-1.337.951-2.422 2.154-2.422 1.211 0 2.175 1.095 2.154 2.422 0 1.337-.951 2.422-2.154 2.422zm7.974 0c-1.183 0-2.154-1.085-2.154-2.422 0-1.337.95-2.422 2.154-2.422 1.21 0 2.174 1.095 2.154 2.422 0 1.337-.944 2.422-2.154 2.422z" />
+              </svg>
+              Join Discord
+            </button>
+            {!discordInviteUrl && (
+              <p className="text-xs text-gray-500">Add VITE_DISCORD_INVITE_URL to enable this button</p>
+            )}
+          </div>
         </div>
 
         {/* Search Bar */}

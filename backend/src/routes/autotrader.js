@@ -1,9 +1,25 @@
 const express = require("express")
 const auth = require("../middleware/auth")
 const { PrismaClient } = require("@prisma/client")
+const notificationService = require("../services/notificationService")
 
 const router = express.Router()
 const prisma = new PrismaClient()
+const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+
+async function sendAutoTraderSetupNotification(userId, activity, channels = null) {
+  try {
+    const [user, notificationSettings] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.notificationSettings.findUnique({ where: { userId } })
+    ])
+
+    if (!user || !notificationSettings) return
+    await notificationService.sendActivityNotification(user, activity, notificationSettings, channels)
+  } catch (error) {
+    console.error("Auto-trader setup notification error:", error.message)
+  }
+}
 
 /**
  * @route   GET /autotrader
@@ -153,6 +169,25 @@ router.post("/", auth, async (req, res) => {
       }
     })
 
+    await sendAutoTraderSetupNotification(userId, {
+      subject: `🤖 Rule Created: ${strategyType}`,
+      title: "Auto-Trader Rule Created",
+      description: "Your auto-trader rule has been created and activated.",
+      details: {
+        Market: question,
+        Outcome: outcome || "Any",
+        Strategy: strategyType,
+        Trigger: triggerCondition,
+        Action: action,
+        Quantity: parseFloat(quantity),
+        "Max Executions": maxExecutions ? parseInt(maxExecutions) : 1,
+        Status: "Active"
+      },
+      actionLabel: "View Auto-Trader",
+      actionUrl: `${dashboardBaseUrl}/portfolio`,
+      color: 0x2563EB
+    })
+
     console.log("✅ Auto-trader created successfully:", autoTrader.id)
 
     res.json({
@@ -218,6 +253,23 @@ router.put("/:id", auth, async (req, res) => {
       data: updateData
     })
 
+    await sendAutoTraderSetupNotification(userId, {
+      subject: `🛠️ Rule Updated: ${updatedTrader.strategyType}`,
+      title: "Auto-Trader Rule Updated",
+      description: "Your auto-trader rule settings were updated.",
+      details: {
+        Market: updatedTrader.question,
+        Strategy: updatedTrader.strategyType,
+        Trigger: updatedTrader.triggerCondition,
+        Action: updatedTrader.action,
+        Quantity: updatedTrader.quantity,
+        Active: updatedTrader.isActive ? "Yes" : "No"
+      },
+      actionLabel: "View Auto-Trader",
+      actionUrl: `${dashboardBaseUrl}/portfolio`,
+      color: 0xF59E0B
+    })
+
     res.json({
       success: true,
       autoTrader: updatedTrader,
@@ -255,6 +307,21 @@ router.patch("/:id/toggle", auth, async (req, res) => {
       data: {
         isActive: !trader.isActive
       }
+    })
+
+    await sendAutoTraderSetupNotification(userId, {
+      subject: `${updatedTrader.isActive ? "▶️" : "⏸️"} Rule ${updatedTrader.isActive ? "Activated" : "Paused"}`,
+      title: `Auto-Trader ${updatedTrader.isActive ? "Activated" : "Paused"}`,
+      description: "Your auto-trader rule status has changed.",
+      details: {
+        Market: updatedTrader.question,
+        Strategy: updatedTrader.strategyType,
+        Action: updatedTrader.action,
+        Status: updatedTrader.isActive ? "Active" : "Paused"
+      },
+      actionLabel: "View Auto-Trader",
+      actionUrl: `${dashboardBaseUrl}/portfolio`,
+      color: updatedTrader.isActive ? 0x10B981 : 0xEF4444
     })
 
     res.json({

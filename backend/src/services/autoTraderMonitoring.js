@@ -514,7 +514,11 @@ class AutoTraderMonitoringService {
         throw new Error(`API error: ${response.status}`)
       }
 
-      return await response.json()
+      const data = await response.json()
+      // API returns outcomes and outcomePrices as JSON strings — parse them
+      if (typeof data.outcomes === "string") data.outcomes = JSON.parse(data.outcomes)
+      if (typeof data.outcomePrices === "string") data.outcomePrices = JSON.parse(data.outcomePrices)
+      return data
     } catch (error) {
       console.error(`Error fetching market ${marketId}:`, error)
       return null

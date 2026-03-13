@@ -2,8 +2,24 @@ const express = require("express")
 const router = express.Router()
 const { PrismaClient } = require("@prisma/client")
 const authenticate = require("../middleware/auth")
+const notificationService = require("../services/notificationService")
 
 const prisma = new PrismaClient()
+const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+
+async function sendPolymarketActivityNotification(userId, activity, channels = null) {
+  try {
+    const [user, notificationSettings] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.notificationSettings.findUnique({ where: { userId } })
+    ])
+
+    if (!user || !notificationSettings) return
+    await notificationService.sendActivityNotification(user, activity, notificationSettings, channels)
+  } catch (error) {
+    console.error("Polymarket notification error:", error.message)
+  }
+}
 
 /**
  * GET /polymarket/markets
@@ -532,6 +548,23 @@ router.post("/trade", authenticate, async (req, res) => {
       }
     })
 
+    await sendPolymarketActivityNotification(userId, {
+      subject: `🎯 Bet Placed: ${outcome}`,
+      title: "Polymarket Bet Placed",
+      description: `You placed a bet on \"${question}\".`,
+      details: {
+        Market: question,
+        Outcome: outcome,
+        Shares: sharesNum.toFixed(2),
+        Price: `$${priceNum.toFixed(4)}`,
+        Cost: `$${totalCost.toFixed(2)}`,
+        Action: "Buy"
+      },
+      actionLabel: "View Market",
+      actionUrl: `${dashboardBaseUrl}/polymarket/details/${marketId}`,
+      color: 0x2563EB
+    })
+
     res.json({
       success: true,
       position,
@@ -663,6 +696,23 @@ router.post("/positions/:id/close", authenticate, async (req, res) => {
         orderType: "Market",
         status: "Filled"
       }
+    })
+
+    await sendPolymarketActivityNotification(userId, {
+      subject: `💰 Position Closed: ${position.outcome}`,
+      title: "Polymarket Position Closed",
+      description: `Your position has been closed for \"${position.question}\".`,
+      details: {
+        Market: position.question,
+        Outcome: position.outcome,
+        Shares: position.shares.toFixed(2),
+        "Close Price": `$${closePriceNum.toFixed(4)}`,
+        Proceeds: `$${proceeds.toFixed(2)}`,
+        "P&L": `$${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`
+      },
+      actionLabel: "View Positions",
+      actionUrl: `${dashboardBaseUrl}/polymarket`,
+      color: pnl >= 0 ? 0x10B981 : 0xEF4444
     })
 
     res.json({

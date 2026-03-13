@@ -5,7 +5,6 @@ import MarketAnalytics from "./pages/MarketAnalytics"
 import Watchlists from "./pages/Watchlists"
 import Portfolio from "./pages/Portfolio"
 import Trading from "./pages/Trading"
-import Community from "./pages/Community"
 import Polymarket from "./pages/Polymarket"
 import PolymarketTrade from "./pages/PolymarketTrade"
 import MarketDetails from "./pages/MarketDetails"
@@ -45,11 +44,6 @@ export default function App() {
         <Route
           path="/users"
           element={isLoggedIn ? <Dashboard /> : <Navigate to="/login" />}
-        />
-
-        <Route
-          path="/community"
-          element={isLoggedIn ? <Community /> : <Navigate to="/login" />}
         />
 
         <Route

@@ -6,7 +6,6 @@ import StockDetail from "../components/StockDetail"
 import TradingPanel from "../components/TradingPanel"
 import { getWatchlist, toggleWatchlist as toggleWatchlistAPI } from "../services/watchlist"
 import { exportWatchlist } from "../services/export"
-import CreateSharedWatchlistModal from "../components/CreateSharedWatchlistModal"
 
 export default function Watchlists() {
   const navigate = useNavigate()
@@ -23,7 +22,6 @@ export default function Watchlists() {
   const [sortBy, setSortBy] = useState("symbol") // symbol, price, change
   const [priceRange, setPriceRange] = useState("all") // all, under100, 100to500, over500
   const [selectedCategories, setSelectedCategories] = useState([]) // 股票分类
-  const [showShareModal, setShowShareModal] = useState(false)
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
 
@@ -189,15 +187,6 @@ export default function Watchlists() {
     }
   }
 
-  // Handle share watchlist
-  const handleShare = () => {
-    if (watchlist.length === 0) {
-      alert('Your watchlist is empty, cannot share')
-      return
-    }
-    setShowShareModal(true)
-  }
-
   if (loading) {
     return (
       <div className="flex">
@@ -262,14 +251,6 @@ export default function Watchlists() {
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
                 >
                   Export CSV
-                </button>
-                <button
-                  onClick={handleShare}
-                  disabled={watchlist.length === 0}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
-                >
-                  <span>🔗</span>
-                  Share
                 </button>
               </div>
             </div>
@@ -440,17 +421,6 @@ export default function Watchlists() {
           stock={tradingStock}
           onClose={() => setShowTradingPanel(false)}
           onTrade={handleTrade}
-        />
-      )}
-
-      {/* Share Watchlist Modal */}
-      {showShareModal && (
-        <CreateSharedWatchlistModal
-          onClose={() => setShowShareModal(false)}
-          onSuccess={() => {
-            setShowShareModal(false)
-            alert('Watchlist shared successfully!')
-          }}
         />
       )}
     </div>

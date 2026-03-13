@@ -2,8 +2,24 @@ const express = require("express")
 const router = express.Router()
 const { PrismaClient } = require("@prisma/client")
 const authenticate = require("../middleware/auth")
+const notificationService = require("../services/notificationService")
 
 const prisma = new PrismaClient()
+const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+
+async function sendAlertSetupNotification(userId, activity, channels = null) {
+  try {
+    const [user, notificationSettings] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.notificationSettings.findUnique({ where: { userId } })
+    ])
+
+    if (!user || !notificationSettings) return
+    await notificationService.sendActivityNotification(user, activity, notificationSettings, channels)
+  } catch (error) {
+    console.error("Alert setup notification error:", error.message)
+  }
+}
 
 /**
  * GET /alerts
@@ -125,6 +141,26 @@ router.post("/", authenticate, async (req, res) => {
         isActive: true,
         isTriggered: false
       }
+    })
+
+    const thresholdValue = alertType === "Price"
+      ? `${condition} ${parseFloat(targetPrice).toFixed(4)}`
+      : `Volume >= ${parseFloat(orderBookThreshold).toFixed(2)}`
+
+    await sendAlertSetupNotification(userId, {
+      subject: `🛎️ Alert Created: ${question}`,
+      title: "Alert Rule Created",
+      description: "Your alert rule was created and is now active.",
+      details: {
+        Market: question,
+        Outcome: outcome,
+        Type: alertType,
+        Threshold: thresholdValue,
+        Status: "Active"
+      },
+      actionLabel: "View Alerts",
+      actionUrl: `${dashboardBaseUrl}/polymarket`,
+      color: 0x2563EB
     })
 
     res.json({
