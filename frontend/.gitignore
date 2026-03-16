@@ -27,3 +27,4 @@ dist-ssr
 backend/prisma/prisma/dev.db
 
 .vercel
+.env*.local

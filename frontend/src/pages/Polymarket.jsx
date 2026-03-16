@@ -2,6 +2,92 @@ import { useState, useEffect } from "react"
 import Sidebar from "../components/Sidebar"
 import PolymarketCard from "../components/PolymarketCard"
 
+const getDiscordInviteUrl = (rawUrl) => {
+  if (!rawUrl) return ""
+
+  try {
+    const parsedUrl = new URL(rawUrl.trim())
+    const host = parsedUrl.hostname.toLowerCase()
+    const path = parsedUrl.pathname.toLowerCase()
+
+    const isInviteHost = host === "discord.gg"
+    const isInvitePath =
+      (host === "discord.com" || host === "www.discord.com" || host === "discordapp.com") &&
+      path.startsWith("/invite/")
+
+    return isInviteHost || isInvitePath ? parsedUrl.toString() : ""
+  } catch {
+    return ""
+  }
+}
+
+const parseMarketNumber = (value) => {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const formatCompactCurrency = (value) => {
+  const amount = parseMarketNumber(value)
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: amount >= 1000 ? "compact" : "standard",
+    maximumFractionDigits: amount >= 1000 ? 1 : 0,
+  }).format(amount)
+}
+
+const getLeadingOutcome = (market) => {
+  if (!Array.isArray(market.outcomes) || !Array.isArray(market.outcomePrices)) {
+    return null
+  }
+
+  const prices = market.outcomePrices.map((price) => parseMarketNumber(price))
+  if (prices.length === 0) return null
+
+  const highestProbability = Math.max(...prices)
+  const highestIndex = prices.indexOf(highestProbability)
+
+  return {
+    name: market.outcomes[highestIndex] || "Leading",
+    probability: highestProbability * 100,
+  }
+}
+
+const getTrendingScore = (market) => {
+  const volume = parseMarketNumber(market.volume)
+  const liquidity = parseMarketNumber(market.liquidity)
+  const leadingOutcome = getLeadingOutcome(market)
+  const balanceScore = leadingOutcome
+    ? Math.max(0, 1 - Math.abs(leadingOutcome.probability - 50) / 50)
+    : 0
+
+  return volume * 0.65 + liquidity * 0.25 + balanceScore * 150000
+}
+
+const leaderboardSections = [
+  {
+    key: "ranking",
+    title: "Ranking",
+    description: "Highest-volume markets right now",
+    accent: "from-blue-600 via-cyan-500 to-sky-400",
+    metricLabel: "Volume",
+    rankPrefix: "#",
+    getValue: (market) => parseMarketNumber(market.volume),
+    formatValue: (market) => formatCompactCurrency(market.volume),
+  },
+  {
+    key: "trending",
+    title: "Trending",
+    description: "Activity weighted by volume, liquidity, and tight odds",
+    accent: "from-orange-500 via-amber-500 to-yellow-400",
+    metricLabel: "Heat",
+    rankPrefix: "T",
+    getValue: (market) => getTrendingScore(market),
+    formatValue: (market) => `${Math.round(getTrendingScore(market) / 1000).toLocaleString()} pts`,
+  },
+]
+
 export default function Polymarket() {
   const [markets, setMarkets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -9,7 +95,8 @@ export default function Polymarket() {
   const [category, setCategory] = useState("all") // all, crypto, politics, sports, tech, finance, entertainment
   const [searchQuery, setSearchQuery] = useState("")
   const [dataSource, setDataSource] = useState(null)
-  const discordInviteUrl = import.meta.env.VITE_DISCORD_INVITE_URL || ""
+  const [focusedMarketId, setFocusedMarketId] = useState(null)
+  const discordInviteUrl = getDiscordInviteUrl(import.meta.env.VITE_DISCORD_INVITE_URL)
 
   useEffect(() => {
     fetchMarkets()
@@ -58,6 +145,13 @@ export default function Polymarket() {
     return matchesSearch && matchesCategory
   })
 
+  const leaderboardMarkets = leaderboardSections.map((section) => ({
+    ...section,
+    markets: [...filteredMarkets]
+      .sort((firstMarket, secondMarket) => section.getValue(secondMarket) - section.getValue(firstMarket))
+      .slice(0, 5),
+  }))
+
   const fetchMarkets = async () => {
     try {
       setLoading(true)
@@ -101,6 +195,20 @@ export default function Polymarket() {
     window.open(discordInviteUrl, "_blank", "noopener,noreferrer")
   }
 
+  const handleLeaderboardMarketClick = (marketId) => {
+    const targetCard = document.getElementById(`market-card-${marketId}`)
+    if (!targetCard) return
+
+    targetCard.scrollIntoView({ behavior: "smooth", block: "center" })
+    setFocusedMarketId(marketId)
+
+    window.setTimeout(() => {
+      setFocusedMarketId((currentFocusedMarketId) =>
+        currentFocusedMarketId === marketId ? null : currentFocusedMarketId
+      )
+    }, 1800)
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -121,7 +229,7 @@ export default function Polymarket() {
               onClick={handleJoinDiscord}
               disabled={!discordInviteUrl}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-              title={discordInviteUrl ? "Join Discord for live notifications" : "Set VITE_DISCORD_INVITE_URL in frontend .env"}
+              title={discordInviteUrl ? "Join Discord for live notifications" : "Set VITE_DISCORD_INVITE_URL to a Discord invite link"}
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20.317 4.369A19.791 19.791 0 0 0 15.885 3c-.191.328-.404.768-.553 1.11a18.27 18.27 0 0 0-5.44 0A11.64 11.64 0 0 0 9.339 3a19.736 19.736 0 0 0-4.434 1.371C2.098 8.532 1.337 12.59 1.71 16.591a19.935 19.935 0 0 0 5.992 3.032 14.08 14.08 0 0 0 1.283-2.093 12.96 12.96 0 0 1-2.017-.964c.169-.121.334-.248.495-.38 3.887 1.824 8.105 1.824 11.946 0 .162.133.327.26.495.38a12.97 12.97 0 0 1-2.021.966c.36.743.79 1.442 1.284 2.091a19.905 19.905 0 0 0 5.994-3.03c.437-4.64-.76-8.66-3.849-12.224zM8.02 14.223c-1.182 0-2.154-1.085-2.154-2.422 0-1.337.951-2.422 2.154-2.422 1.211 0 2.175 1.095 2.154 2.422 0 1.337-.951 2.422-2.154 2.422zm7.974 0c-1.183 0-2.154-1.085-2.154-2.422 0-1.337.95-2.422 2.154-2.422 1.21 0 2.174 1.095 2.154 2.422 0 1.337-.944 2.422-2.154 2.422z" />
@@ -129,7 +237,7 @@ export default function Polymarket() {
               Join Discord
             </button>
             {!discordInviteUrl && (
-              <p className="text-xs text-gray-500">Add VITE_DISCORD_INVITE_URL to enable this button</p>
+              <p className="text-xs text-gray-500">Add a Discord invite URL like https://discord.gg/your-invite-code to enable this button</p>
             )}
           </div>
         </div>
@@ -173,6 +281,64 @@ export default function Polymarket() {
             )}
           </div>
         </div>
+
+        {/* Ranking + Trending */}
+        {!loading && !error && filteredMarkets.length > 0 && (
+          <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {leaderboardMarkets.map((section) => (
+              <section
+                key={section.key}
+                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+              >
+                <div className={`bg-gradient-to-r ${section.accent} px-5 py-4 text-white`}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">{section.title}</h2>
+                      <p className="text-sm text-white/80">{section.description}</p>
+                    </div>
+                    <div className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]">
+                      Top 5
+                    </div>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-gray-100">
+                  {section.markets.map((market, index) => {
+                    const leadingOutcome = getLeadingOutcome(market)
+
+                    return (
+                      <button
+                        type="button"
+                        key={`${section.key}-${market.id}`}
+                        onClick={() => handleLeaderboardMarketClick(market.id)}
+                        className="flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-900 text-sm font-bold text-white">
+                          {section.rankPrefix}{index + 1}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 line-clamp-2 text-sm font-semibold text-gray-900">
+                            {market.question}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                            <span>{section.metricLabel}: {section.formatValue(market)}</span>
+                            <span>Liquidity: {formatCompactCurrency(market.liquidity)}</span>
+                            {leadingOutcome && (
+                              <span>
+                                Leading: {leadingOutcome.name} {leadingOutcome.probability.toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
 
         {/* Category Filters */}
         <div className="mb-6 flex flex-wrap gap-2">
@@ -276,7 +442,17 @@ export default function Polymarket() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredMarkets.map((market) => (
-                  <PolymarketCard key={market.id} market={market} />
+                  <div
+                    key={market.id}
+                    id={`market-card-${market.id}`}
+                    className={`rounded-xl transition-all duration-300 ${
+                      focusedMarketId === market.id
+                        ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-50"
+                        : ""
+                    }`}
+                  >
+                    <PolymarketCard market={market} />
+                  </div>
                 ))}
               </div>
             )}
