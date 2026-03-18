@@ -1,0 +1,39 @@
+name: Polymarket Archive Ingest
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger-ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger archive ingestion endpoint
+        env:
+          ARCHIVE_TRIGGER_URL: ${{ secrets.ARCHIVE_TRIGGER_URL }}
+          ARCHIVE_TRIGGER_SECRET: ${{ secrets.ARCHIVE_TRIGGER_SECRET }}
+        run: |
+          if [ -z "$ARCHIVE_TRIGGER_URL" ]; then
+            echo "ARCHIVE_TRIGGER_URL secret is not configured"
+            exit 1
+          fi
+
+          if [ -z "$ARCHIVE_TRIGGER_SECRET" ]; then
+            echo "ARCHIVE_TRIGGER_SECRET secret is not configured"
+            exit 1
+          fi
+
+          response=$(curl -sS -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${ARCHIVE_TRIGGER_SECRET}" \
+            "${ARCHIVE_TRIGGER_URL}?runQualityReport=false")
+
+          body=$(echo "$response" | sed '$d')
+          status=$(echo "$response" | tail -n1)
+
+          echo "HTTP status: $status"
+          echo "Response body: $body"
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            exit 1
+          fi
