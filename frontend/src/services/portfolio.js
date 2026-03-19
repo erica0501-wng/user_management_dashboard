@@ -224,33 +224,6 @@ export const getHoldingsBySymbol = async (symbol) => {
   return holdings.find(h => h.symbol === symbol) || { quantity: 0 }
 }
 
-// Run strategy backtest
-export const runStrategyBacktest = async (symbol, years) => {
-  const token = getToken()
-  if (!token) throw new Error('No authentication token')
-
-  const response = await fetch(`${API_URL}/portfolio/strategy-backtest`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({ symbol, years })
-  })
-
-  if (response.status === 401) {
-    handleUnauthorized()
-    throw new Error('Session expired. Please login again.')
-  }
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to run backtest')
-  }
-
-  return response.json()
-}
-
 // ==================== Polymarket Functions ====================
 
 // Get polymarket positions

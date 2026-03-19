@@ -112,7 +112,11 @@ export default function MarketDetailsModal({ market, onClose }) {
             <div>
               <OrderBook
                 marketId={market.id}
-                tokenId={null}
+                tokenId={
+                  market.tokens && market.tokens.length > 0
+                    ? market.tokens[0].tokenId
+                    : null
+                }
                 outcome={
                   market.outcomes && market.outcomes.length > 0
                     ? market.outcomes[0]

@@ -6,6 +6,7 @@ import Watchlists from "./pages/Watchlists"
 import Portfolio from "./pages/Portfolio"
 import Trading from "./pages/Trading"
 import Polymarket from "./pages/Polymarket"
+import PolymarketArchive from "./pages/PolymarketArchive"
 import PolymarketTrade from "./pages/PolymarketTrade"
 import MarketDetails from "./pages/MarketDetails"
 import SettingsPage from "./pages/SettingsPage"
@@ -49,6 +50,16 @@ export default function App() {
         <Route
           path="/polymarket"
           element={isLoggedIn ? <Polymarket /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/polymarket/archive"
+          element={isLoggedIn ? <PolymarketArchive /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/polymarket/backtest"
+          element={<Navigate to={isLoggedIn ? "/polymarket/archive" : "/login"} replace />}
         />
 
         <Route

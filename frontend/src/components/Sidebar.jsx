@@ -12,15 +12,24 @@ export default function Sidebar() {
     { id: "watchlists", label: "Watchlists", path: "/watchlists" },
     { id: "portfolio", label: "Portfolio", path: "/portfolio" },
     { id: "polymarket", label: "Polymarket", path: "/polymarket" },
+    { id: "archive", label: "Archive Health", path: "/polymarket/archive" },
     { id: "users", label: "Users Management", path: "/users" },
     { id: "settings", label: "Settings", path: "/settings" }
   ]
 
   // Update active state based on current path
   useEffect(() => {
-    const currentItem = items.find(item => item.path === location.pathname)
+    const currentItem =
+      items.find((item) => item.path === location.pathname) ||
+      [...items]
+        .sort((firstItem, secondItem) => secondItem.path.length - firstItem.path.length)
+        .find(
+          (item) => item.path !== "/" && location.pathname.startsWith(`${item.path}/`)
+        )
     if (currentItem) {
       setActive(currentItem.id)
+    } else if (location.pathname === "/") {
+      setActive("dashboard")
     }
   }, [location.pathname])
 

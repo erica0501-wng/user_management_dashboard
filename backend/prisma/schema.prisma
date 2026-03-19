@@ -259,3 +259,102 @@ enum TradeAction {
   Buy
   Sell
 }
+
+model PolymarketMarketSnapshot {
+  id            Int      @id @default(autoincrement())
+  marketId      String
+  question      String
+  outcomes      Json?
+  outcomePrices Json?
+  tokenIds      Json?
+  volume        Float?
+  liquidity     Float?
+  endDate       DateTime?
+  intervalStart DateTime
+  createdAt     DateTime @default(now())
+  orderBooks    PolymarketOrderBookSnapshot[] @relation("MarketToOrderBooks")
+
+  @@unique([marketId, intervalStart])
+  @@index([intervalStart])
+}
+
+model PolymarketOrderBookSnapshot {
+  id            Int      @id @default(autoincrement())
+  marketId      String
+  tokenId       String
+  outcome       String?
+  bidVolume     Float    @default(0)
+  askVolume     Float    @default(0)
+  totalVolume   Float    @default(0)
+  bestBid       Float?
+  bestAsk       Float?
+  spread        Float?
+  spreadPercent Float?
+  bidDepth      Int      @default(0)
+  askDepth      Int      @default(0)
+  bids          Json?
+  asks          Json?
+  intervalStart DateTime
+  createdAt     DateTime @default(now())
+  market        PolymarketMarketSnapshot? @relation("MarketToOrderBooks", fields: [marketId, intervalStart], references: [marketId, intervalStart], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tokenId, intervalStart])
+  @@index([marketId, intervalStart])
+  @@index([intervalStart])
+}
+
+model PolymarketDataQualityReport {
+  id                     Int      @id @default(autoincrement())
+  windowHours            Int
+  intervalMinutes        Int
+  expectedIntervals      Int
+  distinctMarkets        Int      @default(0)
+  distinctTokens         Int      @default(0)
+  totalMarketSnapshots   Int      @default(0)
+  totalOrderBookSnapshots Int     @default(0)
+  marketCoveragePct      Float    @default(0)
+  orderBookCoveragePct   Float    @default(0)
+  staleMinutes           Int?
+  notes                  String?
+  generatedAt            DateTime @default(now())
+
+  @@index([generatedAt])
+}
+
+// Market groups for organizing backtest data by category
+model MarketGroup {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique  // e.g., "Elon Tweets", "Mr Beast Videos"
+  description String?
+  pattern     String   // Regex pattern to match questions
+  markets     String[] // Array of matched marketIds
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  backtests   Backtest[] // Associated backtest results
+}
+
+// Backtest results tracking
+model Backtest {
+  id              Int      @id @default(autoincrement())
+  groupId         Int
+  group           MarketGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  strategyName    String   // e.g., "momentum_strategy", "mean_reversion"
+  startTime       DateTime
+  endTime         DateTime
+  initialCapital  Float
+  finalValue      Float
+  pnl             Float    // Profit/Loss
+  roi             Float    // Return on Investment %
+  winRate         Float    // Win rate %
+  totalTrades     Int
+  winningTrades   Int
+  losingTrades    Int
+  maxDrawdown     Float    // Maximum drawdown %
+  params          Json     // Strategy parameters used
+  tradeHistory    Json?    // Detailed trade log
+  createdAt       DateTime @default(now())
+  
+  @@index([groupId])
+  @@index([createdAt])
+}

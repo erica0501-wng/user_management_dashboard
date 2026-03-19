@@ -8,6 +8,7 @@
     "dev": "node src/server.js",
     "studio": "npx prisma studio",
     "db:view": "node view-portfolio-database.js",
+    "quality:polymarket": "node check-polymarket-data-quality.js",
     "vercel-build": "npx prisma generate",
     "build": "npx prisma generate",
     "postinstall": "npx prisma generate",
