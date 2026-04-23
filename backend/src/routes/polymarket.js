@@ -4935,6 +4935,95 @@ router.get("/backtest/best", async (req, res) => {
 })
 
 /**
+ * Get markets within a group that have enough archive snapshots to backtest.
+ * GET /polymarket/backtest/available-markets?groupName=Politics&minSnapshots=2
+ */
+router.get("/backtest/available-markets", async (req, res) => {
+  try {
+    const groupName = String(req.query.groupName || "").trim()
+    if (!groupName) {
+      return res.status(400).json({ success: false, error: "groupName is required" })
+    }
+
+    const minSnapshots = Math.max(
+      2,
+      Number.isFinite(parseInt(req.query.minSnapshots, 10))
+        ? parseInt(req.query.minSnapshots, 10)
+        : 2
+    )
+
+    const group = await prisma.marketGroup.findUnique({ where: { name: groupName } })
+    if (!group) {
+      return res.json({ success: true, groupName, markets: [], total: 0 })
+    }
+
+    if (!Array.isArray(group.markets) || group.markets.length === 0) {
+      return res.json({ success: true, groupName, markets: [], total: 0 })
+    }
+
+    const grouped = await prisma.polymarketMarketSnapshot.groupBy({
+      by: ["marketId"],
+      where: { marketId: { in: group.markets } },
+      _count: { _all: true },
+      _max: { intervalStart: true }
+    })
+
+    const eligible = grouped.filter((row) => row._count._all >= minSnapshots)
+    if (eligible.length === 0) {
+      return res.json({ success: true, groupName, markets: [], total: 0 })
+    }
+
+    const eligibleIds = eligible.map((row) => row.marketId)
+
+    const latestSnapshots = await prisma.polymarketMarketSnapshot.findMany({
+      where: { marketId: { in: eligibleIds } },
+      orderBy: { intervalStart: "desc" },
+      distinct: ["marketId"],
+      select: {
+        marketId: true,
+        question: true,
+        outcomes: true,
+        outcomePrices: true,
+        category: true,
+        endDate: true,
+        volume: true,
+        liquidity: true,
+        closed: true
+      }
+    })
+
+    const countById = new Map(eligible.map((row) => [row.marketId, row._count._all]))
+    const latestById = new Map(eligible.map((row) => [row.marketId, row._max.intervalStart]))
+
+    const markets = latestSnapshots
+      .map((snap) => ({
+        id: snap.marketId,
+        question: snap.question,
+        outcomes: snap.outcomes,
+        outcomePrices: snap.outcomePrices,
+        category: snap.category,
+        endDate: snap.endDate,
+        volume: snap.volume,
+        liquidity: snap.liquidity,
+        closed: snap.closed,
+        snapshotCount: countById.get(snap.marketId) || 0,
+        latestSnapshotAt: latestById.get(snap.marketId) || null
+      }))
+      .sort((a, b) => (b.snapshotCount || 0) - (a.snapshotCount || 0))
+
+    return res.json({
+      success: true,
+      groupName,
+      total: markets.length,
+      markets
+    })
+  } catch (error) {
+    console.error("Error loading backtest available markets:", error)
+    return res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+/**
  * Get available strategies
  * GET /polymarket/backtest/strategies
  */

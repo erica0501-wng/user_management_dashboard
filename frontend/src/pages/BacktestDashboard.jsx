@@ -171,6 +171,8 @@ export default function BacktestDashboard() {
   const [rawBacktests, setRawBacktests] = useState([])
   const [backtests, setBacktests] = useState([])
   const [liveMarkets, setLiveMarkets] = useState([])
+  const [availableMarkets, setAvailableMarkets] = useState([])
+  const [availableMarketsLoading, setAvailableMarketsLoading] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [selectedMarketId, setSelectedMarketId] = useState("")
   const [selectedStrategy, setSelectedStrategy] = useState("momentum")
@@ -266,6 +268,29 @@ export default function BacktestDashboard() {
     } catch (err) {
       console.error(err)
       setLiveMarkets([])
+    }
+  }
+
+  // Load markets that actually have archive snapshots for the selected group.
+  // These are the only markets that backtest can run against.
+  const loadAvailableMarkets = async (groupName) => {
+    if (!groupName) {
+      setAvailableMarkets([])
+      return
+    }
+    try {
+      setAvailableMarketsLoading(true)
+      const url = `${API_BASE}/polymarket/backtest/available-markets?groupName=${encodeURIComponent(groupName)}`
+      const response = await fetch(url)
+      if (!response.ok) throw new Error("Failed to load backtest-available markets")
+      const data = await response.json()
+      const markets = Array.isArray(data?.markets) ? data.markets : []
+      setAvailableMarkets(markets)
+    } catch (err) {
+      console.error("loadAvailableMarkets error:", err)
+      setAvailableMarkets([])
+    } finally {
+      setAvailableMarketsLoading(false)
     }
   }
 
@@ -456,17 +481,29 @@ export default function BacktestDashboard() {
 
   const selectedGroupDetails = groups.find((group) => group.name === selectedGroup) || null
   const selectedGroupCategory = normalizePolymarketCategory(getGroupCategory(selectedGroupDetails?.name || ""))
-  const marketOptions = liveMarkets.filter((market) => {
-    const detectedCategory = getPolymarketMarketMeta(market).categoryId
-    return selectedGroupCategory === "other"
-      ? true
-      : detectedCategory === selectedGroupCategory
-  })
+  // Prefer markets that actually have archive snapshots (backtest-eligible).
+  // Fall back to filtering live markets only if backend hasn't returned any
+  // (e.g. while loading or if the endpoint failed).
+  const marketOptions = availableMarkets.length > 0
+    ? availableMarkets
+    : liveMarkets.filter((market) => {
+        const detectedCategory = getPolymarketMarketMeta(market).categoryId
+        return selectedGroupCategory === "other"
+          ? true
+          : detectedCategory === selectedGroupCategory
+      })
   const selectedLiveMarket =
     marketOptions.find((market) => String(market.id) === String(selectedMarketId)) || null
   const selectedLiveMarketMeta = selectedLiveMarket ? getPolymarketMarketMeta(selectedLiveMarket) : null
   const selectedStrategyDetails =
     strategies.find((strategy) => strategy.key === selectedStrategy) || null
+
+  // Whenever the selected group changes, refresh the list of markets that
+  // actually have archive snapshots so the user can only pick backtestable ones.
+  useEffect(() => {
+    loadAvailableMarkets(selectedGroup)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGroup])
 
   useEffect(() => {
     if (marketOptions.length === 0) {
