@@ -205,7 +205,9 @@ export default function BacktestDashboard() {
       let syncFallback = false
 
       const loadPolymarketGroups = async () => {
-        const response = await fetch(`${API_BASE}/polymarket/market-groups?mode=polymarket`)
+        const response = await fetch(`${API_BASE}/polymarket/market-groups?mode=polymarket&_=${Date.now()}`, {
+          cache: "no-store",
+        })
         if (!response.ok) throw new Error("Failed to load market groups")
         return response.json()
       }
@@ -282,8 +284,8 @@ export default function BacktestDashboard() {
     }
     try {
       setAvailableMarketsLoading(true)
-      const url = `${API_BASE}/polymarket/backtest/available-markets?groupName=${encodeURIComponent(groupName)}`
-      const response = await fetch(url)
+      const url = `${API_BASE}/polymarket/backtest/available-markets?groupName=${encodeURIComponent(groupName)}&_=${Date.now()}`
+      const response = await fetch(url, { cache: "no-store" })
       if (!response.ok) throw new Error("Failed to load backtest-available markets")
       const data = await response.json()
       const markets = Array.isArray(data?.markets) ? data.markets : []

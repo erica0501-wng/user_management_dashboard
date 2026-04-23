@@ -4609,6 +4609,7 @@ router.post("/market-groups/sync-polymarket", authenticate, async (req, res) => 
  */
 router.get("/market-groups", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, max-age=0")
     const marketGrouping = require("../services/marketGrouping")
     const mode = req.query.mode === "polymarket" ? "polymarket" : "all"
     const groups = await marketGrouping.getAllGroups({ mode })
@@ -4940,6 +4941,7 @@ router.get("/backtest/best", async (req, res) => {
  */
 router.get("/backtest/available-markets", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, max-age=0")
     const groupName = String(req.query.groupName || "").trim()
     if (!groupName) {
       return res.status(400).json({ success: false, error: "groupName is required" })
