@@ -575,7 +575,9 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
     console.log(`Profit Factor:   ${backtest.metrics.profitFactor.toFixed(2)}`);
     console.log(`Sharpe Ratio:    ${backtest.metrics.sharpeRatio.toFixed(2)}\n`);
 
-    // Fire-and-forget Discord notification
+    // Await Discord notification — on Vercel serverless, fire-and-forget
+    // promises are killed when the lambda response is returned. Awaiting
+    // ensures the webhook actually fires before the function exits.
     const notificationMarketId = String(finalParams?.marketId || '').trim();
     let notificationMarketQuestion = null;
     if (notificationMarketId) {
@@ -587,13 +589,17 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
         null;
     }
 
-    discord.notifyBacktestCompleted({
-      groupName,
-      strategyName,
-      backtest: savedBacktest,
-      marketId: notificationMarketId || null,
-      marketQuestion: notificationMarketQuestion,
-    }).catch(() => {})
+    try {
+      await discord.notifyBacktestCompleted({
+        groupName,
+        strategyName,
+        backtest: savedBacktest,
+        marketId: notificationMarketId || null,
+        marketQuestion: notificationMarketQuestion,
+      })
+    } catch (err) {
+      console.error('[discord] notifyBacktestCompleted failed:', err?.message || err)
+    }
 
     return {
       ...backtest,
