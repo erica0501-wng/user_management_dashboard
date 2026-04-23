@@ -6,6 +6,22 @@ const notificationService = require('../services/notificationService')
 
 const dashboardBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
 
+function getAuthenticatedUserId(req) {
+  const userId = Number(req.user?.id)
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return null
+  }
+  return userId
+}
+
+async function userExists(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true }
+  })
+  return Boolean(user)
+}
+
 async function sendPortfolioActivityNotification(userId, activity, channels = null) {
   try {
     const [user, notificationSettings] = await Promise.all([
@@ -23,7 +39,19 @@ async function sendPortfolioActivityNotification(userId, activity, channels = nu
 // Get user's account balance
 router.get('/balance', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+
+    if (!(await userExists(userId))) {
+      return res.json({
+        userId,
+        availableCash: 0,
+        totalInvested: 0,
+        isVirtual: true
+      })
+    }
 
     let balance = await prisma.accountBalance.findUnique({
       where: { userId }
@@ -50,7 +78,13 @@ router.get('/balance', authenticateToken, async (req, res) => {
 // Top up account balance
 router.post('/topup', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.status(403).json({ error: 'Account not found. Please log in with a registered account.' })
+    }
     const { amount, paymentMethod } = req.body
 
     if (!amount || amount <= 0) {
@@ -100,7 +134,13 @@ router.post('/topup', authenticateToken, async (req, res) => {
 // Withdraw from account balance
 router.post('/withdraw', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.status(403).json({ error: 'Account not found. Please log in with a registered account.' })
+    }
     const { amount, paymentMethod } = req.body
 
     if (!amount || amount <= 0) {
@@ -156,7 +196,14 @@ router.post('/withdraw', authenticateToken, async (req, res) => {
 router.get('/transactions', authenticateToken, async (req, res) => {
   console.log('📋 Fetching transactions for user:', req.user.id)
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+
+    if (!(await userExists(userId))) {
+      return res.json([])
+    }
 
     const transactions = await prisma.transaction.findMany({
       where: { userId },
@@ -174,7 +221,13 @@ router.get('/transactions', authenticateToken, async (req, res) => {
 // Get all orders for user
 router.get('/orders', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.json([])
+    }
     const { status, direction } = req.query
 
     const where = { userId }
@@ -196,7 +249,13 @@ router.get('/orders', authenticateToken, async (req, res) => {
 // Create new order
 router.post('/orders', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.status(403).json({ error: 'Account not found. Please log in with a registered account.' })
+    }
     const { symbol, name, direction, price, quantity, orderType, session } = req.body
 
     // Validate required fields
@@ -299,7 +358,13 @@ router.post('/orders', authenticateToken, async (req, res) => {
 // Update order status (fill or cancel)
 router.patch('/orders/:id', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.status(403).json({ error: 'Account not found. Please log in with a registered account.' })
+    }
     const orderId = parseInt(req.params.id)
     const { status } = req.body
 
@@ -370,7 +435,13 @@ router.patch('/orders/:id', authenticateToken, async (req, res) => {
 // Get holdings (current positions)
 router.get('/holdings', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = getAuthenticatedUserId(req)
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid authentication token' })
+    }
+    if (!(await userExists(userId))) {
+      return res.json([])
+    }
 
     const orders = await prisma.order.findMany({
       where: { userId, status: 'Filled' }

@@ -264,6 +264,12 @@ model PolymarketMarketSnapshot {
   id            Int      @id @default(autoincrement())
   marketId      String
   question      String
+  category      String?
+  closed        Boolean  @default(false)
+  closedTime    DateTime?
+  eventStartAt  DateTime?
+  eventEndAt    DateTime?
+  sourceCreatedAt DateTime?
   outcomes      Json?
   outcomePrices Json?
   tokenIds      Json?
@@ -276,6 +282,9 @@ model PolymarketMarketSnapshot {
 
   @@unique([marketId, intervalStart])
   @@index([intervalStart])
+  @@index([eventStartAt])
+  @@index([eventEndAt])
+  @@index([closedTime])
 }
 
 model PolymarketOrderBookSnapshot {

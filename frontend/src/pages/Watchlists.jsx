@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import StockCard from "../components/StockCard"
@@ -24,6 +24,14 @@ export default function Watchlists() {
   const [selectedCategories, setSelectedCategories] = useState([]) // 股票分类
 
   const stockCategories = ["Tech", "Auto", "Retail", "Finance", "Healthcare", "Energy"]
+  const polymarketSymbols = useMemo(
+    () => watchlist.filter((symbol) => symbol.startsWith("POLY:")),
+    [watchlist]
+  )
+  const stockSymbols = useMemo(
+    () => watchlist.filter((symbol) => !symbol.startsWith("POLY:")),
+    [watchlist]
+  )
 
   // Load user and watchlist from database
   useEffect(() => {
@@ -46,8 +54,11 @@ export default function Watchlists() {
 
   // Fetch watchlist stocks data
   useEffect(() => {
-    if (watchlist.length === 0) {
+    let isActive = true
+
+    if (stockSymbols.length === 0) {
       setLoading(false)
+      setStocksData((prevStocks) => (prevStocks.length === 0 ? prevStocks : []))
       return
     }
 
@@ -57,7 +68,7 @@ export default function Watchlists() {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
       const results = await Promise.all(
-        watchlist.map(async (symbol) => {
+        stockSymbols.map(async (symbol) => {
           try {
             const res = await fetch(
               `${apiUrl}/market/stocks?symbol=${symbol}&interval=1day&range=1w`,
@@ -106,12 +117,20 @@ export default function Watchlists() {
         })
       )
 
+      if (!isActive) {
+        return
+      }
+
       setStocksData(results.filter(stock => stock !== null))
       setLoading(false)
     }
 
     fetchWatchlistData()
-  }, [watchlist])
+
+    return () => {
+      isActive = false
+    }
+  }, [stockSymbols])
 
   // Helper function to get stock name and category
   const getStockInfo = (symbol) => {
@@ -265,6 +284,24 @@ export default function Watchlists() {
               </div>
             ) : (
               <>
+                {polymarketSymbols.length > 0 && (
+                  <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                    <h3 className="text-base font-semibold text-indigo-900 mb-2">
+                      Polymarket Watchlist
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {polymarketSymbols.map((symbol) => (
+                        <span
+                          key={symbol}
+                          className="rounded-full bg-white border border-indigo-200 px-3 py-1 text-xs text-indigo-800"
+                        >
+                          {symbol.replace("POLY:", "")}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* 搜索框和过滤器按钮 */}
                 <div className="mb-6 mt-6 flex gap-3 relative">
                   <input
@@ -404,9 +441,15 @@ export default function Watchlists() {
                   ))}
                 </div>
 
-                {filteredStocks.length === 0 && (
+                {filteredStocks.length === 0 && stockSymbols.length > 0 && (
                   <div className="text-center py-12 text-gray-500">
                     No stocks found matching "{searchQuery}"
+                  </div>
+                )}
+
+                {stockSymbols.length === 0 && polymarketSymbols.length > 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    This account currently tracks Polymarket symbols only.
                   </div>
                 )}
               </>

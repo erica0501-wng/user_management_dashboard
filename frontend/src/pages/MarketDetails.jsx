@@ -5,6 +5,68 @@ import Sidebar from "../components/Sidebar"
 import AlertManager from "../components/AlertManager"
 import OrderBook from "../components/OrderBook"
 
+// Helper function to normalize market data from API
+function normalizeMarketData(market) {
+  if (!market) return null
+
+  // Parse outcomes if it's a string
+  let outcomes = market.outcomes
+  if (typeof outcomes === 'string') {
+    try {
+      outcomes = JSON.parse(outcomes)
+    } catch (e) {
+      outcomes = ["Yes", "No"]
+    }
+  } else if (!Array.isArray(outcomes)) {
+    outcomes = ["Yes", "No"]
+  }
+
+  // Parse outcomePrices if it's a string
+  let outcomePrices = market.outcomePrices
+  if (typeof outcomePrices === 'string') {
+    try {
+      outcomePrices = JSON.parse(outcomePrices)
+    } catch (e) {
+      outcomePrices = outcomes.map(() => "0.5")
+    }
+  } else if (!Array.isArray(outcomePrices)) {
+    outcomePrices = outcomes.map(() => "0.5")
+  }
+
+  // Parse clobTokenIds if it's a string
+  let tokenIds = []
+  if (market.clobTokenIds) {
+    try {
+      tokenIds = typeof market.clobTokenIds === 'string' 
+        ? JSON.parse(market.clobTokenIds) 
+        : market.clobTokenIds
+    } catch (e) {
+      console.log('Failed to parse clobTokenIds:', e)
+    }
+  }
+
+  // Create tokens array mapping outcomes to token IDs
+  const tokens = outcomes.map((outcome, index) => ({
+    outcome,
+    tokenId: tokenIds[index] || null
+  }))
+
+  return {
+    id: market.id || market.condition_id || `market-${Date.now()}`,
+    question: market.question || market.title || "Unknown Market",
+    description: market.description || "",
+    image: market.image || market.icon || "https://via.placeholder.com/400x200?text=Market",
+    outcomes: outcomes,
+    outcomePrices: outcomePrices,
+    tokens: tokens,
+    volume: market.volume || market.volume24hr || "0",
+    liquidity: market.liquidity || "0",
+    endDate: market.endDate || market.end_date_iso || market.closesAt || null,
+    active: market.active !== undefined ? market.active : !market.closed,
+    createdAt: market.createdAt || market.created_at || new Date().toISOString()
+  }
+}
+
 export default function MarketDetails() {
   const { marketId } = useParams()
   const navigate = useNavigate()
@@ -21,27 +83,65 @@ export default function MarketDetails() {
       setLoading(true)
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000"
       
-      // First try to get from markets endpoint
+      console.log('🔍 Searching for market ID:', marketId, typeof marketId)
+      
+      // First try the direct endpoint for this specific market
+      try {
+        const directResponse = await fetch(`${apiUrl}/polymarket/markets/${marketId}`)
+        
+        if (directResponse.ok) {
+          const directData = await directResponse.json()
+          let market = directData.market
+          
+          // Normalize the market data to ensure consistent structure
+          market = normalizeMarketData(market)
+          
+          console.log('📊 Market loaded directly:', {
+            id: market.id,
+            question: market.question,
+            outcomes: market.outcomes,
+            pricesCount: market.outcomePrices?.length
+          })
+          
+          setMarket(market)
+          return
+        }
+      } catch (directErr) {
+        console.log('⚠️ Direct endpoint failed, trying markets list fallback:', directErr.message)
+      }
+      
+      // Fallback: get from markets endpoint
       const response = await fetch(`${apiUrl}/polymarket/markets`)
       
       if (!response.ok) throw new Error("Failed to fetch market")
 
       const data = await response.json()
-      const foundMarket = data.markets.find(m => m.id === marketId)
+      console.log('📦 Fetched markets:', data.markets.length, 'available')
+      console.log('📋 Sample IDs:', data.markets.slice(0, 3).map(m => ({ id: m.id, type: typeof m.id })))
+      
+      // Try exact match first, then try string conversion
+      let foundMarket = data.markets.find(m => m.id === marketId)
       
       if (!foundMarket) {
-        throw new Error("Market not found")
+        // Try string comparison
+        foundMarket = data.markets.find(m => String(m.id) === String(marketId))
+      }
+      
+      if (!foundMarket) {
+        console.error('❌ Market not found. Searched for:', marketId)
+        console.error('❌ First 5 available market IDs:', data.markets.slice(0, 5).map(m => m.id))
+        throw new Error(`Market not found (ID: ${marketId})`)
       }
 
       setMarket(foundMarket)
       
       // Log market data for debugging
-      console.log('📊 Market loaded:', {
+      console.log('📊 Market loaded from list:', {
         id: foundMarket.id,
         question: foundMarket.question,
+        outcomes: foundMarket.outcomes,
         hasTokens: !!foundMarket.tokens,
-        tokensCount: foundMarket.tokens?.length || 0,
-        firstToken: foundMarket.tokens?.[0]
+        tokensCount: foundMarket.tokens?.length || 0
       })
     } catch (err) {
       setError(err.message)
@@ -188,8 +288,8 @@ export default function MarketDetails() {
         <div className="mb-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Current Prices</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {market.outcomes &&
-              market.outcomePrices &&
+            {Array.isArray(market.outcomes) &&
+              Array.isArray(market.outcomePrices) &&
               market.outcomes.map((outcome, index) => (
                 <div
                   key={outcome}
@@ -226,12 +326,12 @@ export default function MarketDetails() {
             <OrderBook
               marketId={market.id}
               tokenId={
-                market.tokens && market.tokens.length > 0
+                Array.isArray(market.tokens) && market.tokens.length > 0
                   ? market.tokens[0].tokenId
                   : null
               }
               outcome={
-                market.outcomes && market.outcomes.length > 0
+                Array.isArray(market.outcomes) && market.outcomes.length > 0
                   ? market.outcomes[0]
                   : null
               }

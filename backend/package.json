@@ -6,12 +6,23 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "backtest:categories": "node run-category-backtests.js",
     "studio": "npx prisma studio",
     "db:view": "node view-portfolio-database.js",
+    "db:inspect:sqlite": "node scripts/inspect-sqlite.js",
+    "db:copy:sqlite-to-current": "node -r dotenv/config scripts/copy-sqlite-to-postgres.js",
+    "db:copy:pg-to-current": "node -r dotenv/config scripts/copy-db-full.js",
+    "db:verify:current": "node -r dotenv/config scripts/count-target-rows.js",
+    "db:migrate:sqlite-to-current": "node scripts/migrate-to-current-db.js",
+    "audit:sports-active-period": "node audit-sports-active-period-data.js",
     "quality:polymarket": "node check-polymarket-data-quality.js",
     "vercel-build": "npx prisma generate",
     "build": "npx prisma generate",
     "postinstall": "npx prisma generate",
+    "seed:multi-login-users": "node seed-multi-login-users.js",
+    "discord:test": "node scripts/test-discord-notifier.js",
+    "discord:digest": "node scripts/daily-discord-digest.js",
+    "archive:bootstrap": "node scripts/bootstrap-archive.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -28,7 +39,9 @@
     "google-auth-library": "^10.5.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.9.14",
+    "pg": "^8.20.0",
     "prisma": "^6.19.2",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "sql.js": "^1.14.1"
   }
 }

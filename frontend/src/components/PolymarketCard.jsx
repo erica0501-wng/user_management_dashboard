@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Bell, BookOpen, Bot, X, Pause, Play, Trash2 } from "lucide-react"
+import { getPolymarketMarketMeta } from "../utils/polymarketMarketMeta"
 
 export default function PolymarketCard({ market, onTradeComplete }) {
   const [showDetails, setShowDetails] = useState(false)
@@ -101,45 +102,7 @@ export default function PolymarketCard({ market, onTradeComplete }) {
   }
 
   const leading = getLeadingOutcome()
-  // Detect category
-  const detectCategory = (question, description) => {
-    const text = `${question || ""} ${description || ""}`.toLowerCase()
-    
-    // Entertainment - check first to avoid "market" in "box office market"
-    if (text.match(/movie|film|music|celebrity|oscar|grammy|entertainment|tv show|box office|netflix|streaming|concert|album|cinema|actor|actress/)) {
-      return { name: "Entertainment", color: "bg-pink-100 text-pink-800" }
-    }
-    
-    // Crypto
-    if (text.match(/bitcoin|crypto|ethereum|btc|eth|blockchain|defi|nft|cryptocurrency|token|coin/)) {
-      return { name: "Crypto", color: "bg-orange-100 text-orange-800" }
-    }
-    
-    // Politics
-    if (text.match(/election|president|presidential|政治|vote|voting|congress|senate|政府|political|government|campaign/)) {
-      return { name: "Politics", color: "bg-purple-100 text-purple-800" }
-    }
-    
-    // Sports
-    if (text.match(/sport|football|basketball|soccer|nba|nfl|championship|tennis|premier league|lakers|olympics|world cup|fifa|baseball|hockey/)) {
-      return { name: "Sports", color: "bg-green-100 text-green-800" }
-    }
-    
-    // Tech
-    if (text.match(/\bai\b|artificial intelligence|coding|software|apple|google|meta|microsoft|ar glasses|augmented reality|virtual reality|robot|technology|tech/)) {
-      return { name: "Tech", color: "bg-blue-100 text-blue-800" }
-    }
-    
-    // Finance
-    if (text.match(/stock market|stock|economy|recession|gdp|inflation|finance|trading|fed|federal reserve|interest rate|investment|wall street|sp 500|s&p 500|nasdaq|dow jones/)) {
-      return { name: "Finance", color: "bg-yellow-100 text-yellow-800" }
-    }
-    
-    // Everything else
-    return { name: "Other", color: "bg-gray-100 text-gray-800" }
-  }
-
-  const category = detectCategory(market.question || "", market.description || "")
+  const category = getPolymarketMarketMeta(market)
   
   // State to track image load status
   const [imageLoaded, setImageLoaded] = useState(true)
@@ -274,25 +237,25 @@ export default function PolymarketCard({ market, onTradeComplete }) {
   // Get category gradient
   const getCategoryGradient = () => {
     const gradients = {
-      "Crypto": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-      "Politics": "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-      "Sports": "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
-      "Tech": "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
-      "Finance": "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
-      "Entertainment": "linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)",
-      "Other": "linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)"
+      Entertainment: "linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)",
+      Crypto: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      Politics: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+      Sports: "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+      Technology: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+      Finance: "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
+      Other: "linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)"
     }
-    return gradients[category.name] || gradients["Other"]
+    return gradients[category.categoryLabel] || gradients.Other
   }
 
   return (
     <div className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow border border-gray-200 overflow-hidden">
       {/* Market Image with Fallback */}
       <div className="h-40 bg-gray-100 overflow-hidden relative">
-        {market.image && imageLoaded ? (
+        {category.imageUrl && imageLoaded ? (
           <img
-            src={market.image}
-            alt={market.question}
+            src={category.imageUrl}
+            alt={category.displayName}
             className="w-full h-full object-cover"
             onError={(e) => {
               setImageLoaded(false)
@@ -304,7 +267,7 @@ export default function PolymarketCard({ market, onTradeComplete }) {
             style={{ background: getCategoryGradient() }}
           >
             <div className="text-center p-4">
-              <div className="text-sm font-semibold opacity-90">{category.name}</div>
+              <div className="text-sm font-semibold opacity-90">{category.categoryLabel}</div>
             </div>
           </div>
         )}
@@ -313,15 +276,22 @@ export default function PolymarketCard({ market, onTradeComplete }) {
       <div className="p-5">
         {/* Category Badge */}
         <div className="mb-3">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${category.color}`}>
-            {category.name}
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${category.categoryColor}`}>
+            {category.categoryLabel}
           </span>
         </div>
 
         {/* Question */}
-        <h3 className="text-lg font-semibold text-gray-900 mb-3 line-clamp-2">
-          {market.question}
+        <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2" title={category.displayName}>
+          {category.displayName}
         </h3>
+
+        {/* Content / Description */}
+        {category.description && (
+          <p className="text-sm text-gray-600 mb-3 line-clamp-2" title={category.description}>
+            {category.description}
+          </p>
+        )}
 
         {/* Leading Outcome */}
         {leading && (

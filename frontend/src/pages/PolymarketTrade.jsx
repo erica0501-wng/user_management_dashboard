@@ -225,6 +225,8 @@ export default function PolymarketTrade() {
       }
     })() : null
 
+  const marketHeroImage = market?.image || `https://via.placeholder.com/1200x400.png?text=${encodeURIComponent(market?.question || "Polymarket Market")}`
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -250,6 +252,37 @@ export default function PolymarketTrade() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-8">
           {/* Left Column - Chart and Details */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Market Hero */}
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-slate-900 text-white shadow-sm">
+              <div className="relative h-56">
+                <img
+                  src={marketHeroImage}
+                  alt={market?.question || "Polymarket market"}
+                  className="absolute inset-0 h-full w-full object-cover opacity-70"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/50 to-transparent" />
+                <div className="relative flex h-full items-end p-6">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/70">
+                      <span>Polymarket</span>
+                      <span>•</span>
+                      <span>{market?.active ? "Live" : "Closed"}</span>
+                      {market?.endDate ? (
+                        <>
+                          <span>•</span>
+                          <span>{new Date(market.endDate).toLocaleDateString()}</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <h2 className="mt-2 text-3xl font-bold leading-tight">{market?.question}</h2>
+                    {market?.description && (
+                      <p className="mt-2 max-w-3xl text-sm text-white/80">{market.description}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Probability Display */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-baseline gap-3 mb-2">

@@ -3,6 +3,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 // Get watchlist for the current user
 export const getWatchlist = async () => {
   const token = localStorage.getItem('token');
+  
   const response = await fetch(`${API_URL}/watchlist`, {
     headers: {
       Authorization: `Bearer ${token}`
@@ -44,6 +45,14 @@ export const toggleWatchlist = async (symbol) => {
   );
   
   console.log('📥 Response status:', response.status)
+
+  if (response.status === 401 || response.status === 404) {
+    console.warn('⚠️ Session invalid (status ' + response.status + '). Clearing token and redirecting to /login.')
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+    throw new Error('Session expired. Please log in again.');
+  }
   
   if (!response.ok) {
     const errorText = await response.text()

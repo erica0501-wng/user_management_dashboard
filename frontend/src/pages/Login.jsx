@@ -1,7 +1,20 @@
 import { useState } from "react"
 import { login, register } from "../services/auth"
-import AuthLayout from "../layouts/AuthLayout"
-import AuthCard from "../layouts/AuthCard"
+
+const quickLoginProfiles = [
+  {
+    id: "intermediate-user",
+    label: "Intermediate User",
+    email: "intermediate.user@empros.demo",
+    password: "DemoPass123",
+  },
+  {
+    id: "new-user",
+    label: "New User",
+    email: "new.user@empros.demo",
+    password: "DemoPass123",
+  },
+]
 
 export default function Login() {
   const [email, setEmail] = useState("")
@@ -14,6 +27,7 @@ export default function Login() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [quickLoginLoadingId, setQuickLoginLoadingId] = useState("")
 
   async function handleLoginSubmit(e) {
     e.preventDefault()
@@ -47,17 +61,35 @@ export default function Login() {
     }
   }
 
+  async function handleQuickLogin(profile) {
+    try {
+      setError("")
+      setQuickLoginLoadingId(profile.id)
+      const response = await login({ email: profile.email, password: profile.password })
+      localStorage.setItem("token", response.token)
+      localStorage.setItem("user", JSON.stringify(response.user))
+      window.location.href = "/"
+    } catch (err) {
+      setError(err.message || "Quick login failed")
+    } finally {
+      setQuickLoginLoadingId("")
+    }
+  }
+
   return (
-    
-    <AuthLayout>
-      <AuthCard>
-        <h2 className="text-center text-2xl font-semibold text-white mb-6">
-          {isRegistering ? "Create Account" : "Sign in"}
-        </h2>
+    <div className="min-h-screen bg-[#f5f5f7] px-4 py-6 text-[#1d1d1f] flex items-center justify-center font-apple">
+      <div className="w-full max-w-md">
+        <div className="rounded-3xl border border-[#d2d2d7] bg-white px-6 py-6 text-[#1d1d1f] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+          <h2 className="text-[34px] font-semibold tracking-[-0.02em] text-[#1d1d1f]">
+            {isRegistering ? "Create Account" : "Sign In"}
+          </h2>
+          <p className="mt-1 text-[15px] font-medium leading-relaxed text-[#6e6e73]">
+            {isRegistering ? "Create your credentials to continue" : "Enter your credentials to continue"}
+          </p>
 
         <form
           onSubmit={isRegistering ? handleRegisterSubmit : handleLoginSubmit}
-          className="space-y-4"
+            className="mt-5 space-y-4"
         >
           {isRegistering && (
             <>
@@ -65,7 +97,7 @@ export default function Login() {
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-lg bg-slate-700 px-4 py-2 text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-500"
+                            className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 text-[15px] font-medium text-[#1d1d1f] placeholder-[#8e8e93] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
               />
 
               <input
@@ -73,13 +105,13 @@ export default function Login() {
                 placeholder="Age"
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
-                className="w-full rounded-lg bg-slate-700 px-4 py-2 text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-500"
+                            className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 text-[15px] font-medium text-[#1d1d1f] placeholder-[#8e8e93] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
               />
 
               <select
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
-                className="w-full rounded-lg bg-slate-700 px-4 py-2 text-white outline-none"
+                            className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 text-[15px] font-medium text-[#1d1d1f] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
               >
                 <option value="">Select Gender</option>
                 <option value="Male">Male</option>
@@ -92,7 +124,7 @@ export default function Login() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg bg-slate-700 px-4 py-2 text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-500"
+                    className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 text-[15px] font-medium text-[#1d1d1f] placeholder-[#8e8e93] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
           />
 
           <div className="relative">
@@ -101,12 +133,12 @@ export default function Login() {
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg bg-slate-700 px-4 py-2 pr-10 text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-500"
+                className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 pr-10 text-[15px] font-medium text-[#1d1d1f] placeholder-[#8e8e93] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8e8e93] hover:text-[#1d1d1f] transition"
               title={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? (
@@ -129,12 +161,12 @@ export default function Login() {
                 placeholder="Confirm Password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg bg-slate-700 px-4 py-2 pr-10 text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-500"
+                            className="w-full rounded-xl border border-[#d2d2d7] bg-white px-4 py-2.5 pr-10 text-[15px] font-medium text-[#1d1d1f] placeholder-[#8e8e93] outline-none transition focus:border-[#1d1d1f] focus:ring-2 focus:ring-black/10"
               />
               <button
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8e8e93] hover:text-[#1d1d1f] transition"
                 title={showConfirmPassword ? "Hide password" : "Show password"}
               >
                 {showConfirmPassword ? (
@@ -153,30 +185,52 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-[#005adc] py-2.5 text-white font-semibold hover:bg-blue-700 transition shadow-lg"
+                    className="w-full rounded-xl bg-[#1d1d1f] py-2.5 text-[15px] tracking-[0.01em] text-white font-semibold hover:bg-black transition"
           >
-            {isRegistering ? "Register" : "Sign in"}
+              {isRegistering ? "Register" : "Sign In"}
           </button>
         </form>
 
         {error && (
-          <p className="mt-4 text-center text-sm text-red-400">{error}</p>
+            <p className="mt-4 text-center text-sm text-[#d70015]">{error}</p>
         )}
 
-        <p className="mt-6 text-center text-sm text-gray-300">
-          {isRegistering ? "Already have an account?" : "Don't have an account?"}{" "}
+          <p className="mt-5 text-center text-sm font-medium text-[#6e6e73]">
+            {isRegistering ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
             onClick={() => {
               setIsRegistering(!isRegistering)
               setError("")
             }}
-            className="text-white font-medium underline hover:text-gray-200"
+              className="font-semibold text-[#1d1d1f] underline underline-offset-2 hover:text-black"
           >
-            {isRegistering ? "Sign in" : "Register"}
+              {isRegistering ? "Sign In" : "Register"}
           </button>
         </p>
-      </AuthCard>
-    </AuthLayout>
+
+          {!isRegistering && (
+            <div className="mt-4 rounded-3xl border border-[#d2d2d7] bg-[#fbfbfd] px-6 py-6 text-[#1d1d1f] shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+              <h3 className="text-[26px] font-semibold tracking-[-0.01em] text-[#1d1d1f]">Quick Login</h3>
+              <p className="mt-1 text-[14px] font-medium text-[#6e6e73]">Click to sign in as a demo user</p>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {quickLoginProfiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => handleQuickLogin(profile)}
+                    disabled={quickLoginLoadingId === profile.id}
+                    className="rounded-xl border border-[#d2d2d7] bg-white px-3 py-2.5 text-sm font-semibold tracking-[0.01em] text-[#1d1d1f] transition hover:bg-[#f5f5f7] disabled:opacity-60"
+                  >
+                    {quickLoginLoadingId === profile.id ? "Signing in..." : profile.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

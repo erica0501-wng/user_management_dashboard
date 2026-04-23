@@ -1,7 +1,10 @@
 /* ========================
    Load Environment Variables FIRST
 ======================== */
-require("dotenv").config()
+require("dotenv").config({
+  // In local development, prefer backend/.env over stale shell-level vars.
+  override: process.env.NODE_ENV !== "production"
+})
 
 const { Prisma } = require("@prisma/client")
 const express = require("express")

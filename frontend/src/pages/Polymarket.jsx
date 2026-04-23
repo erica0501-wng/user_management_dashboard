@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Link } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import PolymarketCard from "../components/PolymarketCard"
+import { CATEGORY_FILTERS, getPolymarketMarketMeta } from "../utils/polymarketMarketMeta"
 
 const getDiscordInviteUrl = (rawUrl) => {
   if (!rawUrl) return ""
@@ -93,7 +94,7 @@ export default function Polymarket() {
   const [markets, setMarkets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [category, setCategory] = useState("all") // all, crypto, politics, sports, tech, finance, entertainment
+  const [category, setCategory] = useState("all") // all, crypto, politics, sports, technology, finance, entertainment
   const [searchQuery, setSearchQuery] = useState("")
   const [dataSource, setDataSource] = useState(null)
   const [focusedMarketId, setFocusedMarketId] = useState(null)
@@ -103,48 +104,62 @@ export default function Polymarket() {
     fetchMarkets()
   }, [])
 
-  // Detect market category based on keywords
-  const detectCategory = (question, description) => {
-    const text = `${question || ""} ${description || ""}`.toLowerCase()
-    
-    // Entertainment - check first to avoid "market" in "box office market"
-    if (text.match(/movie|film|music|celebrity|oscar|grammy|entertainment|tv show|box office|netflix|streaming|concert|album|cinema|actor|actress/)) return "entertainment"
-    
-    // Crypto
-    if (text.match(/bitcoin|crypto|ethereum|btc|eth|blockchain|defi|nft|cryptocurrency|token|coin/)) return "crypto"
-    
-    // Politics
-    if (text.match(/election|president|presidential|政治|vote|voting|congress|senate|政府|political|government|campaign/)) return "politics"
-    
-    // Sports
-    if (text.match(/sport|football|basketball|soccer|nba|nfl|championship|tennis|premier league|lakers|olympics|world cup|fifa|baseball|hockey/)) return "sports"
-    
-    // Tech
-    if (text.match(/\bai\b|artificial intelligence|coding|software|apple|google|meta|microsoft|ar glasses|augmented reality|virtual reality|robot|technology|tech/)) return "tech"
-    
-    // Finance
-    if (text.match(/stock market|stock|economy|recession|gdp|inflation|finance|trading|fed|federal reserve|interest rate|investment|wall street|sp 500|s&p 500|nasdaq|dow jones/)) return "finance"
-    
-    // Everything else
-    return "other"
-  }
-
   // Filter and search markets
   const filteredMarkets = markets.filter((market) => {
+    const marketMeta = getPolymarketMarketMeta(market)
     // Search filter
     const matchesSearch = 
       searchQuery === "" ||
-      market.question?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      market.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      marketMeta.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      market.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      marketMeta.categoryLabel?.toLowerCase().includes(searchQuery.toLowerCase())
 
     // Category filter
-    const detectedCategory = detectCategory(market.question, market.description)
+    const detectedCategory = marketMeta.categoryId
     const matchesCategory = 
       category === "all" ||
       detectedCategory === category
 
     return matchesSearch && matchesCategory
   })
+
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      crypto: 0,
+      politics: 0,
+      sports: 0,
+      technology: 0,
+      finance: 0,
+      entertainment: 0,
+      other: 0,
+    }
+
+    for (const market of markets) {
+      const detected = getPolymarketMarketMeta(market).categoryId
+      if (Object.prototype.hasOwnProperty.call(counts, detected)) {
+        counts[detected] += 1
+      }
+    }
+
+    return counts
+  }, [markets])
+
+  const visibleCategories = useMemo(() => {
+    return CATEGORY_FILTERS.filter((categoryOption) => {
+      return true
+    })
+  }, [categoryCounts])
+
+  useEffect(() => {
+    if (category === "all") {
+      return
+    }
+
+    const selectedStillVisible = visibleCategories.some((item) => item.id === category)
+    if (!selectedStillVisible) {
+      setCategory("all")
+    }
+  }, [category, visibleCategories])
 
   const leaderboardMarkets = leaderboardSections.map((section) => ({
     ...section,
@@ -161,7 +176,7 @@ export default function Polymarket() {
       const token = localStorage.getItem("token")
       
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/polymarket/markets`,
+        `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/polymarket/markets?limit=300&offset=0`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -312,6 +327,7 @@ export default function Polymarket() {
                 <div className="divide-y divide-gray-100">
                   {section.markets.map((market, index) => {
                     const leadingOutcome = getLeadingOutcome(market)
+                    const marketMeta = getPolymarketMarketMeta(market)
 
                     return (
                       <button
@@ -326,7 +342,7 @@ export default function Polymarket() {
 
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 line-clamp-2 text-sm font-semibold text-gray-900">
-                            {market.question}
+                            {marketMeta.displayName}
                           </div>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                             <span>{section.metricLabel}: {section.formatValue(market)}</span>
@@ -349,16 +365,7 @@ export default function Polymarket() {
 
         {/* Category Filters */}
         <div className="mb-6 flex flex-wrap gap-2">
-          {[
-            { id: "all", label: "All Categories"},
-            { id: "crypto", label: "Crypto"},
-            { id: "politics", label: "Politics" },
-            { id: "sports", label: "Sports" },
-            { id: "tech", label: "Technology" },
-            { id: "finance", label: "Finance" },
-            { id: "entertainment", label: "Entertainment" },
-            { id: "other", label: "Other" }
-          ].map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}
@@ -397,8 +404,8 @@ export default function Polymarket() {
           </div>
           <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
             <div className="text-sm text-gray-600 mb-1">Category</div>
-            <div className="text-lg font-bold text-blue-600 capitalize">
-              {category === "all" ? "All" : category}
+            <div className="text-lg font-bold text-blue-600">
+              {category === "all" ? "All" : CATEGORY_FILTERS.find((item) => item.id === category)?.label || category}
             </div>
           </div>
         </div>

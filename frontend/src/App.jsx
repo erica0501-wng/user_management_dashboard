@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import Login from "./pages/Login"
+import MultiLogin from "./pages/MultiLogin"
 import Dashboard from "./pages/Dashboard"
 import MarketAnalytics from "./pages/MarketAnalytics"
 import Watchlists from "./pages/Watchlists"
@@ -7,9 +8,12 @@ import Portfolio from "./pages/Portfolio"
 import Trading from "./pages/Trading"
 import Polymarket from "./pages/Polymarket"
 import PolymarketArchive from "./pages/PolymarketArchive"
+import BacktestDashboard from "./pages/BacktestDashboard"
+import BacktestDetails from "./pages/BacktestDetails"
 import PolymarketTrade from "./pages/PolymarketTrade"
 import MarketDetails from "./pages/MarketDetails"
 import SettingsPage from "./pages/SettingsPage"
+import EventCalendar from "./pages/EventCalendar"
 
 export default function App() {
   const isLoggedIn = !!localStorage.getItem("token")
@@ -20,6 +24,11 @@ export default function App() {
         <Route
           path="/login"
           element={isLoggedIn ? <Navigate to="/" /> : <Login />}
+        />
+
+        <Route
+          path="/login/multi"
+          element={isLoggedIn ? <Navigate to="/" /> : <MultiLogin />}
         />
 
         <Route
@@ -59,7 +68,12 @@ export default function App() {
 
         <Route
           path="/polymarket/backtest"
-          element={<Navigate to={isLoggedIn ? "/polymarket/archive" : "/login"} replace />}
+          element={isLoggedIn ? <BacktestDashboard /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/polymarket/backtest/:backtestId"
+          element={isLoggedIn ? <BacktestDetails /> : <Navigate to="/login" />}
         />
 
         <Route
@@ -70,6 +84,16 @@ export default function App() {
         <Route
           path="/polymarket/trade/:marketId"
           element={isLoggedIn ? <PolymarketTrade /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/events/calendar"
+          element={isLoggedIn ? <EventCalendar /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/polymarket/elon-intense"
+          element={<Navigate to={isLoggedIn ? "/events/calendar" : "/login"} replace />}
         />
 
         <Route

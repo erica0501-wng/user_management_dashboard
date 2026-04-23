@@ -7,6 +7,20 @@ const notificationService = require("../services/notificationService")
 const prisma = new PrismaClient()
 const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
 
+function isDatabaseUnavailableError(error) {
+  const message = String(error?.message || "").toLowerCase()
+  const code = String(error?.code || "")
+
+  return (
+    message.includes("data transfer quota") ||
+    message.includes("connection") ||
+    message.includes("database") ||
+    code === "P1001" ||
+    code === "P1002" ||
+    code === "P2024"
+  )
+}
+
 async function sendAlertSetupNotification(userId, activity, channels = null) {
   try {
     const [user, notificationSettings] = await Promise.all([
@@ -305,6 +319,16 @@ router.get("/triggered", authenticate, async (req, res) => {
     })
   } catch (error) {
     console.error("❌ Get Triggered Alerts Error:", error)
+
+    if (isDatabaseUnavailableError(error)) {
+      return res.json({
+        success: true,
+        count: 0,
+        alerts: [],
+        fallback: true,
+      })
+    }
+
     res.status(500).json({
       success: false,
       error: error.message

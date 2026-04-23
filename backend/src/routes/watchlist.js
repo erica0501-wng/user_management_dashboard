@@ -5,6 +5,20 @@ const authenticateToken = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
+function isDatabaseUnavailableError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '');
+
+  return (
+    message.includes('data transfer quota') ||
+    message.includes('connection') ||
+    message.includes('database') ||
+    code === 'P1001' ||
+    code === 'P1002' ||
+    code === 'P2024'
+  );
+}
+
 // Get user's watchlist
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -20,6 +34,11 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json(symbols);
   } catch (error) {
     console.error('Error fetching watchlist:', error);
+
+    if (isDatabaseUnavailableError(error)) {
+      return res.json([]);
+    }
+
     res.status(500).json({ error: 'Failed to fetch watchlist' });
   }
 });
@@ -92,11 +111,25 @@ router.post('/toggle', authenticateToken, async (req, res) => {
     
     console.log('👤 User ID:', userId)
     console.log('📊 Symbol:', symbol)
+    console.log('📝 req.user:', req.user)
     
     if (!symbol) {
       console.log('❌ No symbol provided')
       return res.status(400).json({ error: 'Symbol is required' });
     }
+    
+    if (!userId) {
+      console.log('❌ No userId found in token')
+      return res.status(401).json({ error: 'Invalid token - no user ID' });
+    }
+    
+    // Verify user exists
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      console.log(`❌ User ${userId} not found in database`)
+      return res.status(404).json({ error: 'User not found' });
+    }
+    console.log('✅ User verified:', user.username)
     
     // Check if already exists
     const existing = await prisma.watchlist.findUnique({
@@ -135,6 +168,11 @@ router.post('/toggle', authenticateToken, async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Error toggling watchlist:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack.split('\n').slice(0, 3)
+    });
     res.status(500).json({ error: 'Failed to toggle watchlist' });
   }
 });
