@@ -10,15 +10,21 @@ const DEFAULT_USERNAME = "Polymarket Bot"
 
 function isEnabled(envKey, defaultEnabled = true) {
   const raw = process.env[envKey]
-  if (raw === undefined || raw === null || raw === "") {
+  if (raw === undefined || raw === null) {
     return defaultEnabled
   }
-  return String(raw).toLowerCase() === "true"
+  // Trim whitespace, CR/LF, and stray surrounding quotes that can sneak in
+  // when env vars are added through PowerShell stdin redirection.
+  const cleaned = String(raw).trim().replace(/^["']|["']$/g, "").trim().toLowerCase()
+  if (cleaned === "") return defaultEnabled
+  return cleaned === "true" || cleaned === "1" || cleaned === "yes"
 }
 
 async function postToDiscord(payload) {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL
+  const rawUrl = process.env.DISCORD_WEBHOOK_URL
+  const webhookUrl = rawUrl ? String(rawUrl).trim().replace(/^["']|["']$/g, "").trim() : ""
   if (!webhookUrl) {
+    console.warn("[discord] DISCORD_WEBHOOK_URL not set — skipping notification")
     return { success: false, skipped: true, reason: "DISCORD_WEBHOOK_URL not set" }
   }
 
