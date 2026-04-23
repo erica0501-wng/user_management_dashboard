@@ -814,7 +814,7 @@ export default function BacktestDashboard() {
                           {availableMarketsLoading
                             ? "loading..."
                             : availableMarketsGroupTotal
-                              ? `${marketOptions.length} of ${availableMarketsGroupTotal} have archive data`
+                              ? `${marketOptions.length} markets (${marketOptions.filter((m) => m.hasArchiveData).length} with archive data)`
                               : `${marketOptions.length} markets`}
                         </span>
                       </div>
@@ -836,14 +836,22 @@ export default function BacktestDashboard() {
                           {marketOptions.map((market) => {
                             const meta = getPolymarketMarketMeta(market, `Market ${market.id}`)
                             const parts = []
-                            if (market.snapshotCount) parts.push(`${market.snapshotCount} snaps`)
-                            if (typeof market.priceRange === "number" && market.priceRange > 0) {
-                              parts.push(`${(market.priceRange * 100).toFixed(1)}% range`)
+                            if (!market.hasArchiveData) {
+                              parts.push("no archive yet — cannot backtest")
+                            } else {
+                              if (market.snapshotCount) parts.push(`${market.snapshotCount} snaps`)
+                              if (typeof market.priceRange === "number" && market.priceRange > 0) {
+                                parts.push(`${(market.priceRange * 100).toFixed(1)}% range`)
+                              }
+                              if (market.tradeable === false) parts.push("flat — may yield 0 trades")
                             }
-                            if (market.tradeable === false) parts.push("flat — may yield 0 trades")
                             const suffix = parts.length ? ` — ${parts.join(", ")}` : ""
                             return (
-                              <option key={String(market.id)} value={String(market.id)}>
+                              <option
+                                key={String(market.id)}
+                                value={String(market.id)}
+                                disabled={!market.hasArchiveData}
+                              >
                                 {meta.displayName}{suffix}
                               </option>
                             )

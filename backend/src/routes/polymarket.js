@@ -4946,42 +4946,43 @@ router.get("/backtest/available-markets", async (req, res) => {
     }
 
     const minSnapshots = Math.max(
-      2,
+      1,
       Number.isFinite(parseInt(req.query.minSnapshots, 10))
         ? parseInt(req.query.minSnapshots, 10)
-        : 2
+        : 1
     )
 
     const group = await prisma.marketGroup.findUnique({ where: { name: groupName } })
     if (!group) {
-      return res.json({ success: true, groupName, markets: [], total: 0 })
+      return res.json({ success: true, groupName, markets: [], total: 0, groupTotal: 0 })
     }
 
-    if (!Array.isArray(group.markets) || group.markets.length === 0) {
-      return res.json({ success: true, groupName, markets: [], total: 0 })
+    const groupMarketIds = Array.isArray(group.markets) ? group.markets.map(String) : []
+    if (groupMarketIds.length === 0) {
+      return res.json({ success: true, groupName, markets: [], total: 0, groupTotal: 0 })
     }
 
+    // Snapshot counts for every market in the group (markets without
+    // snapshots simply don't appear in this groupBy result).
     const grouped = await prisma.polymarketMarketSnapshot.groupBy({
       by: ["marketId"],
-      where: { marketId: { in: group.markets } },
+      where: { marketId: { in: groupMarketIds } },
       _count: { _all: true },
       _max: { intervalStart: true }
     })
 
-    const eligible = grouped.filter((row) => row._count._all >= minSnapshots)
-    if (eligible.length === 0) {
-      return res.json({ success: true, groupName, markets: [], total: 0 })
-    }
+    const countById = new Map(grouped.map((row) => [String(row.marketId), row._count._all]))
+    const latestById = new Map(grouped.map((row) => [String(row.marketId), row._max.intervalStart]))
 
-    const eligibleIds = eligible.map((row) => row.marketId)
+    const idsWithSnapshots = grouped.map((row) => String(row.marketId))
 
-    // Pull all snapshot prices for eligible markets so we can compute
-    // price volatility — this lets the UI surface markets that will
-    // actually produce trades (flat markets get pushed to the bottom).
-    const allSnapshots = await prisma.polymarketMarketSnapshot.findMany({
-      where: { marketId: { in: eligibleIds } },
-      select: { marketId: true, outcomePrices: true },
-    })
+    // Pull all snapshot prices so we can compute volatility for ranking.
+    const allSnapshots = idsWithSnapshots.length
+      ? await prisma.polymarketMarketSnapshot.findMany({
+          where: { marketId: { in: idsWithSnapshots } },
+          select: { marketId: true, outcomePrices: true },
+        })
+      : []
 
     const parseFirstPrice = (raw) => {
       if (!raw) return null
@@ -4998,8 +4999,9 @@ router.get("/backtest/available-markets", async (req, res) => {
     for (const s of allSnapshots) {
       const p = parseFirstPrice(s.outcomePrices)
       if (p === null) continue
-      if (!pricesByMarket.has(s.marketId)) pricesByMarket.set(s.marketId, [])
-      pricesByMarket.get(s.marketId).push(p)
+      const mid = String(s.marketId)
+      if (!pricesByMarket.has(mid)) pricesByMarket.set(mid, [])
+      pricesByMarket.get(mid).push(p)
     }
 
     const volatilityById = new Map()
@@ -5021,68 +5023,102 @@ router.get("/backtest/available-markets", async (req, res) => {
       volatilityById.set(mid, { range: max - min, stddev, minPrice: min, maxPrice: max })
     }
 
-    const latestSnapshots = await prisma.polymarketMarketSnapshot.findMany({
-      where: { marketId: { in: eligibleIds } },
-      orderBy: { intervalStart: "desc" },
-      distinct: ["marketId"],
-      select: {
-        marketId: true,
-        question: true,
-        outcomes: true,
-        outcomePrices: true,
-        category: true,
-        endDate: true,
-        volume: true,
-        liquidity: true,
-        closed: true
+    // Get the latest archive snapshot per market for question/outcomes/etc.
+    const latestSnapshots = idsWithSnapshots.length
+      ? await prisma.polymarketMarketSnapshot.findMany({
+          where: { marketId: { in: idsWithSnapshots } },
+          orderBy: { intervalStart: "desc" },
+          distinct: ["marketId"],
+          select: {
+            marketId: true,
+            question: true,
+            outcomes: true,
+            outcomePrices: true,
+            category: true,
+            endDate: true,
+            volume: true,
+            liquidity: true,
+            closed: true
+          }
+        })
+      : []
+    const snapMetaById = new Map(latestSnapshots.map((s) => [String(s.marketId), s]))
+
+    // For markets with NO archive snapshots, fall back to live Polymarket
+    // metadata so the dropdown still shows the question/category. Use the
+    // batch endpoint (id=A&id=B&...) so 50+ markets resolve in 1-2 HTTP
+    // calls instead of N round-trips.
+    const idsWithoutSnapshots = groupMarketIds.filter((id) => !countById.has(id))
+    const liveMetaById = new Map()
+    if (idsWithoutSnapshots.length) {
+      const batchSize = 50
+      for (let i = 0; i < idsWithoutSnapshots.length; i += batchSize) {
+        const batch = idsWithoutSnapshots.slice(i, i + batchSize)
+        const qs = batch.map((id) => `id=${encodeURIComponent(id)}`).join("&")
+        try {
+          const r = await fetch(`https://gamma-api.polymarket.com/markets?${qs}&limit=${batch.length}`, {
+            headers: { "User-Agent": "Mozilla/5.0" },
+          })
+          if (!r.ok) continue
+          const arr = await r.json()
+          if (!Array.isArray(arr)) continue
+          for (const m of arr) {
+            const mid = String(m?.id || "")
+            if (!mid) continue
+            liveMetaById.set(mid, {
+              question: m?.question || m?.title || null,
+              outcomes: Array.isArray(m?.outcomes) ? m.outcomes : null,
+              outcomePrices: Array.isArray(m?.outcomePrices) ? m.outcomePrices : null,
+              category: m?.category || m?.subcategory || null,
+              endDate: m?.endDate || m?.end_date_iso || m?.closesAt || null,
+              volume: m?.volume ?? null,
+              liquidity: m?.liquidity ?? null,
+              closed: m?.closed ?? null,
+            })
+          }
+        } catch (_) { /* ignore batch errors */ }
       }
+    }
+
+    // Build the unified market list — every group member shows up.
+    const markets = groupMarketIds.map((mid) => {
+      const snap = snapMetaById.get(mid)
+      const live = liveMetaById.get(mid)
+      const vol = volatilityById.get(mid) || { range: 0, stddev: 0, minPrice: 0, maxPrice: 0 }
+      const snapshotCount = countById.get(mid) || 0
+      return {
+        id: mid,
+        question: snap?.question || live?.question || live?.title || `Market ${mid}`,
+        outcomes: snap?.outcomes ?? live?.outcomes ?? null,
+        outcomePrices: snap?.outcomePrices ?? live?.outcomePrices ?? null,
+        category: snap?.category ?? live?.category ?? null,
+        endDate: snap?.endDate ?? live?.endDate ?? null,
+        volume: snap?.volume ?? live?.volume ?? null,
+        liquidity: snap?.liquidity ?? live?.liquidity ?? null,
+        closed: snap?.closed ?? live?.closed ?? null,
+        snapshotCount,
+        latestSnapshotAt: latestById.get(mid) || null,
+        priceRange: Number((vol.range || 0).toFixed(4)),
+        priceStddev: Number((vol.stddev || 0).toFixed(4)),
+        minPrice: Number((vol.minPrice || 0).toFixed(4)),
+        maxPrice: Number((vol.maxPrice || 0).toFixed(4)),
+        hasArchiveData: snapshotCount >= minSnapshots,
+        tradeable: snapshotCount >= minSnapshots && (vol.range || 0) >= 0.02,
+      }
+    }).sort((a, b) => {
+      // Markets with archive data first, then by volatility * snapshot count.
+      if (a.hasArchiveData !== b.hasArchiveData) return a.hasArchiveData ? -1 : 1
+      const va = (a.priceRange || 0) * Math.log10((a.snapshotCount || 1) + 1)
+      const vb = (b.priceRange || 0) * Math.log10((b.snapshotCount || 1) + 1)
+      return vb - va
     })
-
-    const countById = new Map(eligible.map((row) => [row.marketId, row._count._all]))
-    const latestById = new Map(eligible.map((row) => [row.marketId, row._max.intervalStart]))
-
-    // Return ALL markets that have archive snapshots (>= minSnapshots).
-    // Volatility/range is exposed in the response so the UI can rank or
-    // warn, but we no longer filter markets out — the user picks. Markets
-    // without any archive data simply aren't returned because a backtest
-    // physically cannot run on them.
-    const markets = latestSnapshots
-      .map((snap) => {
-        const vol = volatilityById.get(snap.marketId) || { range: 0, stddev: 0, minPrice: 0, maxPrice: 0 }
-        return {
-          id: snap.marketId,
-          question: snap.question,
-          outcomes: snap.outcomes,
-          outcomePrices: snap.outcomePrices,
-          category: snap.category,
-          endDate: snap.endDate,
-          volume: snap.volume,
-          liquidity: snap.liquidity,
-          closed: snap.closed,
-          snapshotCount: countById.get(snap.marketId) || 0,
-          latestSnapshotAt: latestById.get(snap.marketId) || null,
-          priceRange: Number(vol.range.toFixed(4)),
-          priceStddev: Number(vol.stddev.toFixed(4)),
-          minPrice: Number(vol.minPrice.toFixed(4)),
-          maxPrice: Number(vol.maxPrice.toFixed(4)),
-          // Hint for the UI — markets with low price movement may produce
-          // 0 trades for momentum-style strategies, but the user can still
-          // choose them.
-          tradeable: (vol.range || 0) >= 0.02,
-        }
-      })
-      .sort((a, b) => {
-        // Most volatile + most data first, but everything is selectable.
-        const va = (a.priceRange || 0) * Math.log10((a.snapshotCount || 1) + 1)
-        const vb = (b.priceRange || 0) * Math.log10((b.snapshotCount || 1) + 1)
-        return vb - va
-      })
 
     return res.json({
       success: true,
       groupName,
       total: markets.length,
-      groupTotal: Array.isArray(group.markets) ? group.markets.length : 0,
+      groupTotal: groupMarketIds.length,
+      withArchiveData: markets.filter((m) => m.hasArchiveData).length,
       markets
     })
   } catch (error) {
