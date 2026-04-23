@@ -481,17 +481,10 @@ export default function BacktestDashboard() {
 
   const selectedGroupDetails = groups.find((group) => group.name === selectedGroup) || null
   const selectedGroupCategory = normalizePolymarketCategory(getGroupCategory(selectedGroupDetails?.name || ""))
-  // Prefer markets that actually have archive snapshots (backtest-eligible).
-  // Fall back to filtering live markets only if backend hasn't returned any
-  // (e.g. while loading or if the endpoint failed).
-  const marketOptions = availableMarkets.length > 0
-    ? availableMarkets
-    : liveMarkets.filter((market) => {
-        const detectedCategory = getPolymarketMarketMeta(market).categoryId
-        return selectedGroupCategory === "other"
-          ? true
-          : detectedCategory === selectedGroupCategory
-      })
+  // Only show markets that actually have archive snapshots (backtest-eligible).
+  // We intentionally do NOT fall back to liveMarkets: doing so would let the
+  // user pick a market with 0 snapshots and hit "Insufficient data".
+  const marketOptions = availableMarkets
   const selectedLiveMarket =
     marketOptions.find((market) => String(market.id) === String(selectedMarketId)) || null
   const selectedLiveMarketMeta = selectedLiveMarket ? getPolymarketMarketMeta(selectedLiveMarket) : null
@@ -813,19 +806,31 @@ export default function BacktestDashboard() {
                         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
                           2. Select Polymarket Market
                         </h3>
-                        <span className="text-xs text-slate-500">{marketOptions.length} markets</span>
+                        <span className="text-xs text-slate-500">
+                          {availableMarketsLoading
+                            ? "loading..."
+                            : `${marketOptions.length} backtestable`}
+                        </span>
                       </div>
 
                       <div className="space-y-3">
                         <select
                           value={selectedMarketId}
                           onChange={(event) => setSelectedMarketId(event.target.value)}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          disabled={availableMarketsLoading || marketOptions.length === 0}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
                         >
-                          <option value="">Select one live market</option>
+                          <option value="">
+                            {availableMarketsLoading
+                              ? "Loading backtestable markets..."
+                              : marketOptions.length === 0
+                                ? "No archive data for this group yet"
+                                : "Select a market with archive data"}
+                          </option>
                           {marketOptions.map((market) => (
                             <option key={String(market.id)} value={String(market.id)}>
                               {getPolymarketMarketMeta(market, `Market ${market.id}`).displayName}
+                              {market.snapshotCount ? ` — ${market.snapshotCount} snapshots` : ""}
                             </option>
                           ))}
                         </select>
