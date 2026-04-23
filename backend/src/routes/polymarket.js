@@ -4975,6 +4975,52 @@ router.get("/backtest/available-markets", async (req, res) => {
 
     const eligibleIds = eligible.map((row) => row.marketId)
 
+    // Pull all snapshot prices for eligible markets so we can compute
+    // price volatility — this lets the UI surface markets that will
+    // actually produce trades (flat markets get pushed to the bottom).
+    const allSnapshots = await prisma.polymarketMarketSnapshot.findMany({
+      where: { marketId: { in: eligibleIds } },
+      select: { marketId: true, outcomePrices: true },
+    })
+
+    const parseFirstPrice = (raw) => {
+      if (!raw) return null
+      try {
+        const arr = Array.isArray(raw) ? raw : JSON.parse(raw)
+        const v = Array.isArray(arr) ? Number(arr[0]) : NaN
+        return Number.isFinite(v) ? v : null
+      } catch (_) {
+        return null
+      }
+    }
+
+    const pricesByMarket = new Map()
+    for (const s of allSnapshots) {
+      const p = parseFirstPrice(s.outcomePrices)
+      if (p === null) continue
+      if (!pricesByMarket.has(s.marketId)) pricesByMarket.set(s.marketId, [])
+      pricesByMarket.get(s.marketId).push(p)
+    }
+
+    const volatilityById = new Map()
+    for (const [mid, prices] of pricesByMarket.entries()) {
+      if (prices.length < 2) {
+        volatilityById.set(mid, { range: 0, stddev: 0, minPrice: prices[0] ?? 0, maxPrice: prices[0] ?? 0 })
+        continue
+      }
+      let min = prices[0], max = prices[0], sum = 0
+      for (const p of prices) {
+        if (p < min) min = p
+        if (p > max) max = p
+        sum += p
+      }
+      const mean = sum / prices.length
+      let varSum = 0
+      for (const p of prices) varSum += (p - mean) ** 2
+      const stddev = Math.sqrt(varSum / prices.length)
+      volatilityById.set(mid, { range: max - min, stddev, minPrice: min, maxPrice: max })
+    }
+
     const latestSnapshots = await prisma.polymarketMarketSnapshot.findMany({
       where: { marketId: { in: eligibleIds } },
       orderBy: { intervalStart: "desc" },
@@ -4995,21 +5041,39 @@ router.get("/backtest/available-markets", async (req, res) => {
     const countById = new Map(eligible.map((row) => [row.marketId, row._count._all]))
     const latestById = new Map(eligible.map((row) => [row.marketId, row._max.intervalStart]))
 
+    // Minimum price range to consider a market "tradeable" by momentum
+    // strategies. Markets flatter than this are excluded so users never pick
+    // a 0-trade market by accident.
+    const MIN_PRICE_RANGE = 0.02
+
     const markets = latestSnapshots
-      .map((snap) => ({
-        id: snap.marketId,
-        question: snap.question,
-        outcomes: snap.outcomes,
-        outcomePrices: snap.outcomePrices,
-        category: snap.category,
-        endDate: snap.endDate,
-        volume: snap.volume,
-        liquidity: snap.liquidity,
-        closed: snap.closed,
-        snapshotCount: countById.get(snap.marketId) || 0,
-        latestSnapshotAt: latestById.get(snap.marketId) || null
-      }))
-      .sort((a, b) => (b.snapshotCount || 0) - (a.snapshotCount || 0))
+      .map((snap) => {
+        const vol = volatilityById.get(snap.marketId) || { range: 0, stddev: 0, minPrice: 0, maxPrice: 0 }
+        return {
+          id: snap.marketId,
+          question: snap.question,
+          outcomes: snap.outcomes,
+          outcomePrices: snap.outcomePrices,
+          category: snap.category,
+          endDate: snap.endDate,
+          volume: snap.volume,
+          liquidity: snap.liquidity,
+          closed: snap.closed,
+          snapshotCount: countById.get(snap.marketId) || 0,
+          latestSnapshotAt: latestById.get(snap.marketId) || null,
+          priceRange: Number(vol.range.toFixed(4)),
+          priceStddev: Number(vol.stddev.toFixed(4)),
+          minPrice: Number(vol.minPrice.toFixed(4)),
+          maxPrice: Number(vol.maxPrice.toFixed(4)),
+        }
+      })
+      .filter((m) => m.priceRange >= MIN_PRICE_RANGE)
+      .sort((a, b) => {
+        // Volatile + many snapshots first
+        const va = (a.priceRange || 0) * Math.log10((a.snapshotCount || 1) + 1)
+        const vb = (b.priceRange || 0) * Math.log10((b.snapshotCount || 1) + 1)
+        return vb - va
+      })
 
     return res.json({
       success: true,

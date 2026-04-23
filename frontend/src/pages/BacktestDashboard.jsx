@@ -827,12 +827,20 @@ export default function BacktestDashboard() {
                                 ? "No archive data for this group yet"
                                 : "Select a market with archive data"}
                           </option>
-                          {marketOptions.map((market) => (
-                            <option key={String(market.id)} value={String(market.id)}>
-                              {getPolymarketMarketMeta(market, `Market ${market.id}`).displayName}
-                              {market.snapshotCount ? ` — ${market.snapshotCount} snapshots` : ""}
-                            </option>
-                          ))}
+                          {marketOptions.map((market) => {
+                            const meta = getPolymarketMarketMeta(market, `Market ${market.id}`)
+                            const parts = []
+                            if (market.snapshotCount) parts.push(`${market.snapshotCount} snaps`)
+                            if (typeof market.priceRange === "number" && market.priceRange > 0) {
+                              parts.push(`${(market.priceRange * 100).toFixed(1)}% range`)
+                            }
+                            const suffix = parts.length ? ` — ${parts.join(", ")}` : ""
+                            return (
+                              <option key={String(market.id)} value={String(market.id)}>
+                                {meta.displayName}{suffix}
+                              </option>
+                            )
+                          })}
                         </select>
 
                         {selectedLiveMarket && (
