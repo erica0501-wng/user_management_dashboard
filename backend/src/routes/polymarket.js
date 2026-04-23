@@ -4948,10 +4948,10 @@ router.get("/backtest/available-markets", async (req, res) => {
     }
 
     const minSnapshots = Math.max(
-      1,
+      2,
       Number.isFinite(parseInt(req.query.minSnapshots, 10))
         ? parseInt(req.query.minSnapshots, 10)
-        : 1
+        : 2
     )
 
     const group = await prisma.marketGroup.findUnique({ where: { name: groupName } })
@@ -4964,11 +4964,24 @@ router.get("/backtest/available-markets", async (req, res) => {
       return res.json({ success: true, groupName, markets: [], total: 0, groupTotal: 0 })
     }
 
-    // Snapshot counts for every market in the group (markets without
-    // snapshots simply don't appear in this groupBy result).
+    // Match the backtest engine's default lookback (30 days) so the
+    // snapshot count we display equals what backtest can actually use.
+    const lookbackDays = Math.max(
+      1,
+      Number.isFinite(parseInt(req.query.lookbackDays, 10))
+        ? parseInt(req.query.lookbackDays, 10)
+        : 30
+    )
+    const windowStart = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
+
+    // Snapshot counts for every market in the group within the backtest
+    // window (markets without snapshots simply don't appear here).
     const grouped = await prisma.polymarketMarketSnapshot.groupBy({
       by: ["marketId"],
-      where: { marketId: { in: groupMarketIds } },
+      where: {
+        marketId: { in: groupMarketIds },
+        intervalStart: { gte: windowStart },
+      },
       _count: { _all: true },
       _max: { intervalStart: true }
     })
@@ -4981,7 +4994,10 @@ router.get("/backtest/available-markets", async (req, res) => {
     // Pull all snapshot prices so we can compute volatility for ranking.
     const allSnapshots = idsWithSnapshots.length
       ? await prisma.polymarketMarketSnapshot.findMany({
-          where: { marketId: { in: idsWithSnapshots } },
+          where: {
+            marketId: { in: idsWithSnapshots },
+            intervalStart: { gte: windowStart },
+          },
           select: { marketId: true, outcomePrices: true },
         })
       : []
