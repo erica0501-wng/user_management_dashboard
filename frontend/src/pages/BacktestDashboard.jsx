@@ -173,6 +173,7 @@ export default function BacktestDashboard() {
   const [liveMarkets, setLiveMarkets] = useState([])
   const [availableMarkets, setAvailableMarkets] = useState([])
   const [availableMarketsLoading, setAvailableMarketsLoading] = useState(false)
+  const [availableMarketsGroupTotal, setAvailableMarketsGroupTotal] = useState(0)
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [selectedMarketId, setSelectedMarketId] = useState("")
   const [selectedStrategy, setSelectedStrategy] = useState("momentum")
@@ -276,6 +277,7 @@ export default function BacktestDashboard() {
   const loadAvailableMarkets = async (groupName) => {
     if (!groupName) {
       setAvailableMarkets([])
+      setAvailableMarketsGroupTotal(0)
       return
     }
     try {
@@ -286,9 +288,11 @@ export default function BacktestDashboard() {
       const data = await response.json()
       const markets = Array.isArray(data?.markets) ? data.markets : []
       setAvailableMarkets(markets)
+      setAvailableMarketsGroupTotal(Number(data?.groupTotal) || markets.length)
     } catch (err) {
       console.error("loadAvailableMarkets error:", err)
       setAvailableMarkets([])
+      setAvailableMarketsGroupTotal(0)
     } finally {
       setAvailableMarketsLoading(false)
     }
@@ -809,7 +813,9 @@ export default function BacktestDashboard() {
                         <span className="text-xs text-slate-500">
                           {availableMarketsLoading
                             ? "loading..."
-                            : `${marketOptions.length} backtestable`}
+                            : availableMarketsGroupTotal
+                              ? `${marketOptions.length} of ${availableMarketsGroupTotal} have archive data`
+                              : `${marketOptions.length} markets`}
                         </span>
                       </div>
 
@@ -834,6 +840,7 @@ export default function BacktestDashboard() {
                             if (typeof market.priceRange === "number" && market.priceRange > 0) {
                               parts.push(`${(market.priceRange * 100).toFixed(1)}% range`)
                             }
+                            if (market.tradeable === false) parts.push("flat — may yield 0 trades")
                             const suffix = parts.length ? ` — ${parts.join(", ")}` : ""
                             return (
                               <option key={String(market.id)} value={String(market.id)}>

@@ -5041,11 +5041,11 @@ router.get("/backtest/available-markets", async (req, res) => {
     const countById = new Map(eligible.map((row) => [row.marketId, row._count._all]))
     const latestById = new Map(eligible.map((row) => [row.marketId, row._max.intervalStart]))
 
-    // Minimum price range to consider a market "tradeable" by momentum
-    // strategies. Markets flatter than this are excluded so users never pick
-    // a 0-trade market by accident.
-    const MIN_PRICE_RANGE = 0.02
-
+    // Return ALL markets that have archive snapshots (>= minSnapshots).
+    // Volatility/range is exposed in the response so the UI can rank or
+    // warn, but we no longer filter markets out — the user picks. Markets
+    // without any archive data simply aren't returned because a backtest
+    // physically cannot run on them.
     const markets = latestSnapshots
       .map((snap) => {
         const vol = volatilityById.get(snap.marketId) || { range: 0, stddev: 0, minPrice: 0, maxPrice: 0 }
@@ -5065,11 +5065,14 @@ router.get("/backtest/available-markets", async (req, res) => {
           priceStddev: Number(vol.stddev.toFixed(4)),
           minPrice: Number(vol.minPrice.toFixed(4)),
           maxPrice: Number(vol.maxPrice.toFixed(4)),
+          // Hint for the UI — markets with low price movement may produce
+          // 0 trades for momentum-style strategies, but the user can still
+          // choose them.
+          tradeable: (vol.range || 0) >= 0.02,
         }
       })
-      .filter((m) => m.priceRange >= MIN_PRICE_RANGE)
       .sort((a, b) => {
-        // Volatile + many snapshots first
+        // Most volatile + most data first, but everything is selectable.
         const va = (a.priceRange || 0) * Math.log10((a.snapshotCount || 1) + 1)
         const vb = (b.priceRange || 0) * Math.log10((b.snapshotCount || 1) + 1)
         return vb - va
@@ -5079,6 +5082,7 @@ router.get("/backtest/available-markets", async (req, res) => {
       success: true,
       groupName,
       total: markets.length,
+      groupTotal: Array.isArray(group.markets) ? group.markets.length : 0,
       markets
     })
   } catch (error) {
