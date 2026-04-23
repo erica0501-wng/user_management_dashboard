@@ -93,7 +93,8 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
   const color = backtest.pnl >= 0 ? 0x2ECC71 : 0xE74C3C
   const emoji = backtest.pnl >= 0 ? "🟢" : "🔴"
 
-  const baseUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "")
+  const rawBaseUrl = (process.env.FRONTEND_URL || "").trim()
+  const baseUrl = (rawBaseUrl || "https://stocks.quadrawebs.com").replace(/\/+$/, "")
   const detailsUrl = backtest.id ? `${baseUrl}/polymarket/backtest/${backtest.id}` : null
 
   const trimmedQuestion = marketQuestion ? String(marketQuestion).trim().slice(0, 240) : null
