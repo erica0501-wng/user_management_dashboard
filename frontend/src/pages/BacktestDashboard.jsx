@@ -233,11 +233,11 @@ export default function BacktestDashboard() {
           data?.message ||
             "Database is temporarily unavailable. Backtest groups are currently running in fallback mode for demo stability."
         )
-      } else if (syncFallback) {
-        setFallbackNotice(
-          "Market group sync is temporarily unavailable. Showing the latest saved groups from the real database."
-        )
       }
+      // syncFallback is no longer surfaced to users — the GET endpoint
+      // already returns the real saved groups, and a transient sync hiccup
+      // (e.g. Vercel cold-start Prisma connection error) self-heals on the
+      // next page load thanks to the retry on the backend.
     } catch (err) {
       setError(err.message)
     }

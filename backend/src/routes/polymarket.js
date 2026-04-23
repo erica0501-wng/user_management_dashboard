@@ -4560,9 +4560,24 @@ router.post("/market-groups/categorize", authenticate, async (req, res) => {
  * POST /polymarket/market-groups/sync-polymarket
  */
 router.post("/market-groups/sync-polymarket", authenticate, async (req, res) => {
+  const marketGrouping = require("../services/marketGrouping")
+
+  // Retry once on transient connection errors (Prisma cold-start on Vercel
+  // serverless can occasionally return P1001/connection errors that resolve
+  // on the next attempt).
+  const trySync = async () => marketGrouping.syncGroupsFromPolymarketCategories()
+
   try {
-    const marketGrouping = require("../services/marketGrouping")
-    const groups = await marketGrouping.syncGroupsFromPolymarketCategories()
+    let groups
+    try {
+      groups = await trySync()
+    } catch (firstErr) {
+      if (!isDatabaseUnavailableError(firstErr)) throw firstErr
+      console.warn("[sync] first attempt hit transient DB error, retrying once:", firstErr?.message)
+      await new Promise((r) => setTimeout(r, 350))
+      groups = await trySync()
+    }
+
     return res.json({
       success: true,
       message: "Polymarket category groups synchronized",
