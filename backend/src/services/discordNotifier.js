@@ -70,9 +70,15 @@ async function notifyArchiveCompleted(result) {
   }
   if (result.skipped) return { skipped: true }
 
+  const rawBaseUrl = (process.env.FRONTEND_URL || "").trim()
+  const baseUrl = (rawBaseUrl || "https://stocks.quadrawebs.com").replace(/\/+$/, "")
+  const archiveUrl = `${baseUrl}/polymarket/archive`
+
   return postToDiscord({
     embeds: [{
       title: "📦 Polymarket archive completed",
+      url: archiveUrl,
+      description: `🔗 **[View archive health ↗](${archiveUrl})**`,
       color: 0x2ECC71,
       timestamp: new Date().toISOString(),
       fields: [
@@ -80,6 +86,7 @@ async function notifyArchiveCompleted(result) {
         { name: "Order book snapshots", value: fmtNum(result.archivedOrderBooks), inline: true },
         { name: "Elapsed", value: `${(result.elapsedMs / 1000).toFixed(1)}s`, inline: true },
         { name: "Interval", value: result.intervalStart || "—", inline: false },
+        { name: "Details", value: `[Open Archive Health ↗](${archiveUrl})`, inline: false },
       ],
     }],
   })
