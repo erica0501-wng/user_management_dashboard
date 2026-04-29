@@ -26,6 +26,109 @@ class PolymarketDataArchiver {
       process.env.POLYMARKET_ARCHIVE_INCLUDE_CLOSED_MARKETS !== "false"
     this.closedSportsOnly = process.env.POLYMARKET_ARCHIVE_CLOSED_SPORTS_ONLY !== "false"
     this.warnedMissingEventColumns = false
+
+    // Priority groups: tag-slug-driven market sets that must be archived in addition
+    // to the generic open/closed pulls. Each group is fetched both open and closed
+    // (subject to includeClosedMarkets) so we cover past + future markets in the snapshot.
+    this.priorityGroups = this.loadPriorityGroups()
+    this.priorityPerGroupLimit = this.parsePositiveInt(
+      process.env.POLYMARKET_ARCHIVE_PRIORITY_PER_GROUP_LIMIT,
+      30
+    )
+    this.priorityClosedPerGroupLimit = this.parsePositiveInt(
+      process.env.POLYMARKET_ARCHIVE_PRIORITY_CLOSED_PER_GROUP_LIMIT,
+      20
+    )
+
+    // Deprioritized categories (e.g., crypto/politics): still archived but pushed to
+    // the back of the per-run queue and capped so high-priority groups always fit.
+    this.deprioritizeCategories = this.parseStringList(
+      process.env.POLYMARKET_ARCHIVE_DEPRIORITIZE_CATEGORIES,
+      ["crypto", "politics"]
+    )
+    this.deprioritizedCategoryShare = this.parseFloatInRange(
+      process.env.POLYMARKET_ARCHIVE_DEPRIORITIZED_SHARE,
+      0.25,
+      0,
+      1
+    )
+
+    this.maxMarketsPerRun = this.parsePositiveInt(
+      process.env.POLYMARKET_ARCHIVE_MAX_MARKETS_PER_RUN,
+      this.marketLimit + this.closedMarketLimit
+    )
+  }
+
+  parseStringList(value, fallback) {
+    if (typeof value !== "string" || value.trim() === "") {
+      return fallback
+    }
+    return value
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  }
+
+  parseFloatInRange(value, fallback, min, max) {
+    const parsed = parseFloat(value)
+    if (!Number.isFinite(parsed)) {
+      return fallback
+    }
+    if (parsed < min || parsed > max) {
+      return fallback
+    }
+    return parsed
+  }
+
+  loadPriorityGroups() {
+    const defaults = [
+      {
+        name: "Elon Tweets",
+        slug: "elon-musk",
+        keywords: ["elon", "musk", "tweet", "@elonmusk"]
+      },
+      {
+        name: "Economic Policy",
+        slug: "economic-policy",
+        keywords: ["fed", "interest rate", "inflation", "cpi", "fomc", "tariff", "gdp", "unemployment"]
+      },
+      {
+        name: "NBA",
+        slug: "nba",
+        keywords: ["nba", "lakers", "celtics", "warriors", "playoff", "knicks", "nuggets"]
+      },
+      {
+        name: "Movies",
+        slug: "movies",
+        keywords: ["movie", "box office", "oscar", "academy award", "film", "rotten tomatoes"]
+      }
+    ]
+
+    const raw = process.env.POLYMARKET_ARCHIVE_PRIORITY_GROUPS
+    if (!raw || raw.trim() === "") {
+      return defaults
+    }
+
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return defaults
+      }
+      return parsed
+        .map((group) => ({
+          name: String(group?.name || group?.slug || "group"),
+          slug: String(group?.slug || "").trim(),
+          keywords: Array.isArray(group?.keywords)
+            ? group.keywords.map((kw) => String(kw || "").toLowerCase()).filter(Boolean)
+            : []
+        }))
+        .filter((group) => group.slug || group.keywords.length > 0)
+    } catch (error) {
+      console.warn(
+        `[warn] Failed to parse POLYMARKET_ARCHIVE_PRIORITY_GROUPS as JSON, falling back to defaults: ${error.message}`
+      )
+      return defaults
+    }
   }
 
   parsePositiveInt(value, fallback) {
@@ -171,8 +274,14 @@ class PolymarketDataArchiver {
   }
 
   async fetchMarkets({ limit, offset = 0, closed }) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      closed: closed ? "true" : "false"
+    })
+
     const response = await fetch(
-      `https://gamma-api.polymarket.com/markets?limit=${limit}&offset=${offset}&closed=${closed ? "true" : "false"}`,
+      `https://gamma-api.polymarket.com/markets?${params.toString()}`,
       {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -215,6 +324,195 @@ class PolymarketDataArchiver {
     })
   }
 
+  matchesGroupKeywords(rawMarket, keywords) {
+    if (!keywords || keywords.length === 0) {
+      return false
+    }
+    const haystack = [
+      rawMarket?.question,
+      rawMarket?.title,
+      rawMarket?.description,
+      rawMarket?.category,
+      rawMarket?.slug,
+      Array.isArray(rawMarket?.events)
+        ? rawMarket.events.map((event) => `${event?.title || ""} ${event?.slug || ""} ${event?.category || ""}`).join(" ")
+        : ""
+    ]
+      .join(" ")
+      .toLowerCase()
+
+    return keywords.some((keyword) => haystack.includes(keyword))
+  }
+
+  async fetchEventsByTag({ limit, closed, tagSlug }) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      closed: closed ? "true" : "false",
+      tag_slug: tagSlug
+    })
+
+    const response = await fetch(
+      `https://gamma-api.polymarket.com/events?${params.toString()}`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          Accept: "application/json"
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events for tag ${tagSlug}: ${response.status}`)
+    }
+
+    const payload = await response.json()
+    return Array.isArray(payload) ? payload : []
+  }
+
+  extractMarketsFromEvents(events) {
+    const markets = []
+    for (const event of events) {
+      if (!event || !Array.isArray(event.markets)) continue
+      for (const market of event.markets) {
+        if (!market) continue
+        // Inject parent event so downstream normalization can read startDate/endDate.
+        if (!Array.isArray(market.events) || market.events.length === 0) {
+          market.events = [
+            {
+              title: event.title,
+              slug: event.slug,
+              category: event.category,
+              startDate: event.startDate,
+              endDate: event.endDate,
+              closedTime: event.closedTime,
+              createdAt: event.createdAt
+            }
+          ]
+        }
+        markets.push(market)
+      }
+    }
+    return markets
+  }
+
+  async fetchMarketsForGroup(group) {
+    const collected = new Map()
+    const addAll = (markets, source) => {
+      for (const market of markets) {
+        const id = String(market?.id || market?.condition_id || "")
+        if (!id || collected.has(id)) {
+          continue
+        }
+        market.__priorityGroup = group.name
+        market.__prioritySource = source
+        collected.set(id, market)
+      }
+    }
+
+    // Open events for the group (covers future / currently-active markets).
+    if (group.slug) {
+      try {
+        const openEvents = await this.fetchEventsByTag({
+          limit: this.priorityPerGroupLimit,
+          closed: false,
+          tagSlug: group.slug
+        })
+        addAll(this.extractMarketsFromEvents(openEvents), "tag-open")
+      } catch (error) {
+        console.warn(`[warn] Priority group "${group.name}" open tag fetch failed: ${error.message}`)
+      }
+    }
+
+    // Closed events for the group (covers past markets so the snapshot has history).
+    if (group.slug && this.includeClosedMarkets) {
+      try {
+        const closedEvents = await this.fetchEventsByTag({
+          limit: this.priorityClosedPerGroupLimit,
+          closed: true,
+          tagSlug: group.slug
+        })
+        addAll(this.extractMarketsFromEvents(closedEvents), "tag-closed")
+      } catch (error) {
+        console.warn(`[warn] Priority group "${group.name}" closed tag fetch failed: ${error.message}`)
+      }
+    }
+
+    // Keyword fallback: if tag filtering returned nothing (slug renamed or removed),
+    // scan a broader slice of the gamma feed and keep markets whose text matches the group.
+    if (collected.size === 0 && group.keywords.length > 0) {
+      try {
+        const broaderOpen = await this.fetchMarkets({
+          limit: Math.max(this.priorityPerGroupLimit * 4, 100),
+          closed: false
+        })
+        addAll(
+          broaderOpen.filter((market) => this.matchesGroupKeywords(market, group.keywords)),
+          "keyword-open"
+        )
+
+        if (this.includeClosedMarkets) {
+          const broaderClosed = await this.fetchMarkets({
+            limit: Math.max(this.priorityClosedPerGroupLimit * 4, 100),
+            closed: true
+          })
+          addAll(
+            broaderClosed.filter((market) => this.matchesGroupKeywords(market, group.keywords)),
+            "keyword-closed"
+          )
+        }
+      } catch (error) {
+        console.warn(`[warn] Priority group "${group.name}" keyword fallback failed: ${error.message}`)
+      }
+    }
+
+    console.log(`[info] Priority group "${group.name}" (slug=${group.slug}) fetched ${collected.size} markets`)
+    return Array.from(collected.values())
+  }
+
+  marketCategoryText(rawMarket) {
+    const events = Array.isArray(rawMarket?.events) ? rawMarket.events : []
+    const eventCategory = events.length > 0 ? events[0]?.category : ""
+    return String(rawMarket?.category || eventCategory || "").toLowerCase()
+  }
+
+  isDeprioritizedMarket(rawMarket) {
+    if (rawMarket?.__priorityGroup) {
+      // Markets pulled in via a priority group keep their priority even if their
+      // category overlaps with a deprioritized one.
+      return false
+    }
+    if (this.deprioritizeCategories.length === 0) {
+      return false
+    }
+    const category = this.marketCategoryText(rawMarket)
+    if (!category) {
+      return false
+    }
+    return this.deprioritizeCategories.some((keyword) => category.includes(keyword))
+  }
+
+  applyDeprioritizationCap(markets) {
+    if (this.deprioritizeCategories.length === 0 || markets.length === 0) {
+      return markets
+    }
+
+    const priority = []
+    const deprioritized = []
+    for (const market of markets) {
+      if (this.isDeprioritizedMarket(market)) {
+        deprioritized.push(market)
+      } else {
+        priority.push(market)
+      }
+    }
+
+    const cap = this.maxMarketsPerRun
+    const deprioritizedCap = Math.max(0, Math.floor(cap * this.deprioritizedCategoryShare))
+    const trimmedDeprioritized = deprioritized.slice(0, deprioritizedCap)
+    const merged = [...priority, ...trimmedDeprioritized]
+    return merged.slice(0, cap)
+  }
+
   async fetchMarketsForArchive() {
     const openMarkets = await this.fetchMarkets({ limit: this.marketLimit, closed: false })
 
@@ -227,7 +525,36 @@ class PolymarketDataArchiver {
       allMarkets.push(...this.filterRecentClosedMarkets(closedMarkets))
     }
 
+    // Pull priority-group markets last so dedupe keeps the first (generic-feed) entry,
+    // but mark every priority-group market so it survives deprioritization trimming.
+    const priorityResults = await Promise.allSettled(
+      this.priorityGroups.map((group) => this.fetchMarketsForGroup(group))
+    )
+    // Round-robin interleave so partial runs (e.g. Vercel timeouts) still touch every
+    // priority group instead of exhausting the first group's quota first.
+    const priorityBuckets = priorityResults
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value.slice())
+    const priorityMarkets = []
+    while (priorityBuckets.some((bucket) => bucket.length > 0)) {
+      for (const bucket of priorityBuckets) {
+        if (bucket.length > 0) {
+          priorityMarkets.push(bucket.shift())
+        }
+      }
+    }
+
     const uniqueByMarketId = new Map()
+
+    // Insert priority markets first so they always win the dedupe and keep their tag.
+    for (const market of priorityMarkets) {
+      const marketId = String(market?.id || market?.condition_id || "")
+      if (!marketId || uniqueByMarketId.has(marketId)) {
+        continue
+      }
+      uniqueByMarketId.set(marketId, market)
+    }
+
     for (const market of allMarkets) {
       const marketId = String(market?.id || market?.condition_id || "")
       if (!marketId) {
@@ -239,7 +566,16 @@ class PolymarketDataArchiver {
       }
     }
 
-    return Array.from(uniqueByMarketId.values())
+    const merged = Array.from(uniqueByMarketId.values())
+    const capped = this.applyDeprioritizationCap(merged)
+
+    const priorityCount = capped.filter((market) => market.__priorityGroup).length
+    const deprioritizedCount = capped.filter((market) => this.isDeprioritizedMarket(market)).length
+    console.log(
+      `[info] Polymarket archive selection: ${capped.length}/${merged.length} markets (priority=${priorityCount}, deprioritized=${deprioritizedCount})`
+    )
+
+    return capped
   }
 
   async upsertMarketSnapshot(market, intervalStart) {
