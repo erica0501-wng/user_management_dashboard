@@ -4139,16 +4139,37 @@ router.post("/archive/ingest/run", handleArchiveIngestRun)
 /**
  * GET/POST /polymarket/backtest/auto-run
  *
- * Cron-friendly endpoint that kicks off a batch of automated backtests so
- * that each run produces its own Discord notification (boss requirement:
- * "individual backtests have their own notifications, ~10 new backtests per
- * day"). Authorized with the same ARCHIVE_CRON_SECRET / CRON_SECRET as the
- * archive ingest cron.
+ * Cron-friendly dispatcher. Boss requirement: ~10 individual Discord
+ * notifications per day, one per backtest.
+ *
+ * On Vercel a single function invocation has a 300s budget which is not
+ * enough to run 10 backtests sequentially (only the first 1–2 finish before
+ * the lambda is killed, hence "Discord only got 1 message"). To work around
+ * that, this dispatcher plans the (group, strategy) combos and then fires
+ * one parallel HTTP call per combo to `/polymarket/backtest/auto-run-single`,
+ * so each backtest runs in its *own* Vercel invocation with its own 300s
+ * budget. The dispatcher itself does barely any work and returns quickly.
+ *
+ * Authorized with the same ARCHIVE_CRON_SECRET / CRON_SECRET as the archive
+ * ingest cron.
  *
  * Optional query/body params:
  *   - maxRuns: number of backtests to attempt (default 10)
  *   - strategies: comma-separated list (default: all built-in strategies)
+ *   - inline=true: skip self-fan-out and run sequentially in this invocation
+ *                  (only useful for local dev where self-HTTP isn't reachable)
  */
+function getSelfBaseUrl(req) {
+  const explicit = String(process.env.SELF_BASE_URL || "").trim().replace(/\/+$/, "")
+  if (explicit) return explicit
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim()
+  if (vercelUrl) return `https://${vercelUrl.replace(/\/+$/, "")}`
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "https").toString().split(",")[0].trim()
+  const host = (req.headers["x-forwarded-host"] || req.get("host") || "").toString().split(",")[0].trim()
+  if (host) return `${proto}://${host}`
+  return ""
+}
+
 async function handleAutoBacktestRun(req, res) {
   try {
     if (!isArchiveIngestAuthorized(req)) {
@@ -4158,52 +4179,162 @@ async function handleAutoBacktestRun(req, res) {
       })
     }
 
-    const maxRuns = parsePositiveInt(
-      req.body?.maxRuns ?? req.query.maxRuns,
-      10
-    )
+    const maxRuns = parsePositiveInt(req.body?.maxRuns ?? req.query.maxRuns, 10)
+    const inline = parseBoolean(req.body?.inline ?? req.query.inline, false)
 
     const rawStrategies = req.body?.strategies ?? req.query.strategies
     let strategies = null
     if (typeof rawStrategies === "string" && rawStrategies.trim() !== "") {
-      strategies = rawStrategies
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
+      strategies = rawStrategies.split(",").map((s) => s.trim()).filter(Boolean)
     } else if (Array.isArray(rawStrategies)) {
       strategies = rawStrategies.map((s) => String(s).trim()).filter(Boolean)
     }
 
     const backtestEngine = require("../services/backtestEngine")
-    const summary = await backtestEngine.runDailyAutoBacktests({
-      maxRuns,
-      ...(strategies ? { strategies } : {}),
-    })
 
-    if (!summary?.success) {
-      return res.status(409).json({
-        success: false,
-        error: summary?.error || "Auto backtest run did not produce any results",
+    // Inline mode = legacy sequential behaviour, kept for local dev.
+    if (inline) {
+      const summary = await backtestEngine.runDailyAutoBacktests({
+        maxRuns,
+        ...(strategies ? { strategies } : {}),
+      })
+      if (!summary?.success) {
+        return res.status(409).json({ success: false, error: summary?.error || "Auto backtest run produced no results", summary })
+      }
+      return res.json({
+        success: true,
+        mode: "inline",
+        message: `Auto-backtest run complete: ${summary.succeeded} ok / ${summary.failed} failed / ${summary.skipped} skipped`,
         summary,
       })
     }
 
+    // Plan combos here, then dispatch each as its own Vercel invocation so
+    // every backtest gets a fresh 300s budget and Discord receives N embeds.
+    const { combos, error } = await backtestEngine.planAutoBacktestCombos({
+      maxRuns,
+      ...(strategies ? { strategies } : {}),
+    })
+
+    if (error || combos.length === 0) {
+      return res.status(409).json({
+        success: false,
+        error: error || "No backtest combos planned",
+      })
+    }
+
+    const baseUrl = getSelfBaseUrl(req)
+    if (!baseUrl) {
+      return res.status(500).json({
+        success: false,
+        error: "Cannot determine self base URL for fan-out (set SELF_BASE_URL env)",
+      })
+    }
+
+    const secret = getArchiveIngestSecret()
+    const authHeader = secret ? { Authorization: `Bearer ${secret}` } : {}
+
+    console.log(`[auto-backtest] Dispatching ${combos.length} parallel runs to ${baseUrl}/polymarket/backtest/auto-run-single`)
+
+    const dispatched = await Promise.allSettled(
+      combos.map(async (combo) => {
+        const url = `${baseUrl}/polymarket/backtest/auto-run-single`
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader },
+          body: JSON.stringify({ groupName: combo.groupName, strategyName: combo.strategyName }),
+        })
+        const body = await response.json().catch(() => ({}))
+        return {
+          groupName: combo.groupName,
+          strategyName: combo.strategyName,
+          httpStatus: response.status,
+          ok: response.ok && body?.success !== false,
+          body,
+        }
+      })
+    )
+
+    const results = dispatched.map((settled, idx) => {
+      if (settled.status === "fulfilled") return settled.value
+      return {
+        groupName: combos[idx].groupName,
+        strategyName: combos[idx].strategyName,
+        httpStatus: 0,
+        ok: false,
+        error: String(settled.reason?.message || settled.reason),
+      }
+    })
+
+    const succeeded = results.filter((r) => r.ok).length
+    const failed = results.length - succeeded
+
     return res.json({
       success: true,
-      message: `Auto-backtest run complete: ${summary.succeeded} ok / ${summary.failed} failed / ${summary.skipped} skipped`,
-      summary,
+      mode: "fan-out",
+      message: `Dispatched ${combos.length} backtests in parallel: ${succeeded} ok / ${failed} failed`,
+      attempted: combos.length,
+      succeeded,
+      failed,
+      results,
     })
   } catch (error) {
-    console.error("[error] Auto-backtest run failed:", error)
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-    })
+    console.error("[error] Auto-backtest dispatch failed:", error)
+    return res.status(500).json({ success: false, error: error.message })
+  }
+}
+
+/**
+ * POST /polymarket/backtest/auto-run-single
+ * Runs a single (group, strategy) backtest. Invoked by the auto-run
+ * dispatcher; each call is a fresh Vercel invocation with its own 300s
+ * budget so Discord reliably gets one embed per backtest.
+ */
+async function handleAutoBacktestRunSingle(req, res) {
+  try {
+    if (!isArchiveIngestAuthorized(req)) {
+      return res.status(401).json({ success: false, error: "Unauthorized auto-backtest single trigger" })
+    }
+
+    const groupName = String(req.body?.groupName || req.query.groupName || "").trim()
+    const strategyName = String(req.body?.strategyName || req.query.strategyName || "momentum").trim()
+
+    if (!groupName) {
+      return res.status(400).json({ success: false, error: "groupName is required" })
+    }
+
+    const backtestEngine = require("../services/backtestEngine")
+    try {
+      const result = await backtestEngine.runBacktest(groupName, strategyName, {}, {})
+      return res.json({
+        success: true,
+        groupName,
+        strategyName,
+        backtestId: result?.backtestId || null,
+      })
+    } catch (err) {
+      const message = String(err?.message || err)
+      const isSoftSkip =
+        message.includes("Insufficient data for backtest") ||
+        message.includes("not found or has no markets")
+      console.warn(`[auto-backtest:single] ${groupName} / ${strategyName} ${isSoftSkip ? "skipped" : "failed"}: ${message}`)
+      return res.status(isSoftSkip ? 200 : 500).json({
+        success: !isSoftSkip ? false : true,
+        skipped: isSoftSkip,
+        groupName,
+        strategyName,
+        error: message,
+      })
+    }
+  } catch (error) {
+    console.error("[error] Auto-backtest single run failed:", error)
+    return res.status(500).json({ success: false, error: error.message })
   }
 }
 
 router.get("/backtest/auto-run", handleAutoBacktestRun)
 router.post("/backtest/auto-run", handleAutoBacktestRun)
+router.post("/backtest/auto-run-single", handleAutoBacktestRunSingle)
 
 /**
  * POST /polymarket/archive/quality-report/run

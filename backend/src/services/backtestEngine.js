@@ -1016,37 +1016,21 @@ async function getBacktestReport(backtestId) {
 }
 
 /**
- * Run a batch of automated backtests across the available market groups.
- *
- * Boss requirement: each backtest should produce its own Discord notification
- * (instead of one generic "archive completed" digest), and we should generate
- * roughly 10 fresh backtests per day. This helper picks up to `maxRuns`
- * (group, strategy) combinations, rotating across groups + strategies so the
- * notification feed stays varied. `runBacktest` already fires
- * `discord.notifyBacktestCompleted` per run, so each successful execution
- * automatically produces an individual Discord embed.
+ * Plan up to `maxRuns` (group, strategy) combinations to run, rotating
+ * across eligible groups + strategies. Used by both the in-process daily
+ * runner (`runDailyAutoBacktests`) and the parallel cron dispatcher in
+ * routes/polymarket.js so each backtest gets its own Vercel invocation.
  */
-async function runDailyAutoBacktests(options = {}) {
+async function planAutoBacktestCombos(options = {}) {
   const maxRuns = Math.max(1, parseInt(options.maxRuns, 10) || 10)
   const requestedStrategies = Array.isArray(options.strategies) && options.strategies.length > 0
     ? options.strategies.filter((name) => STRATEGIES[name])
     : Object.keys(STRATEGIES)
 
   if (requestedStrategies.length === 0) {
-    return {
-      success: false,
-      error: 'No valid strategies configured for auto backtest run.',
-      attempted: 0,
-      succeeded: 0,
-      failed: 0,
-      skipped: 0,
-      results: [],
-    }
+    return { combos: [], eligibleGroups: [], strategies: [], error: 'No valid strategies configured.' }
   }
 
-  // Pull every group; pick the ones with at least one matched market so we
-  // don't waste a slot on an empty group. Order by most-recently-updated so
-  // the daily run favours actively-curated groups.
   const allGroups = await prisma.marketGroup.findMany({
     orderBy: { updatedAt: 'desc' },
     select: { id: true, name: true, markets: true },
@@ -1054,23 +1038,12 @@ async function runDailyAutoBacktests(options = {}) {
 
   const eligibleGroups = allGroups.filter((g) => Array.isArray(g.markets) && g.markets.length > 0)
   if (eligibleGroups.length === 0) {
-    return {
-      success: false,
-      error: 'No market groups with markets are available for auto backtest.',
-      attempted: 0,
-      succeeded: 0,
-      failed: 0,
-      skipped: 0,
-      results: [],
-    }
+    return { combos: [], eligibleGroups: [], strategies: requestedStrategies, error: 'No market groups with markets are available.' }
   }
 
-  // Build (group, strategy) combinations in round-robin fashion so that
-  // - every group gets a turn before any group gets a second one;
-  // - strategies rotate so the digest covers momentum / meanReversion / volatility.
   const combos = []
   let strategyIdx = 0
-  for (let cycle = 0; combos.length < maxRuns; cycle += 1) {
+  while (combos.length < maxRuns) {
     let addedThisCycle = 0
     for (const group of eligibleGroups) {
       if (combos.length >= maxRuns) break
@@ -1082,10 +1055,45 @@ async function runDailyAutoBacktests(options = {}) {
     if (addedThisCycle === 0) break
   }
 
+  return { combos, eligibleGroups, strategies: requestedStrategies, error: null }
+}
+
+/**
+ * Run a batch of automated backtests across the available market groups.
+ *
+ * Boss requirement: each backtest should produce its own Discord notification
+ * (instead of one generic "archive completed" digest), and we should generate
+ * roughly 10 fresh backtests per day. This helper picks up to `maxRuns`
+ * (group, strategy) combinations, rotating across groups + strategies so the
+ * notification feed stays varied. `runBacktest` already fires
+ * `discord.notifyBacktestCompleted` per run, so each successful execution
+ * automatically produces an individual Discord embed.
+ *
+ * NOTE: This runs combos sequentially in the *current* process. On Vercel
+ * serverless this is bounded by the 300s function timeout, so the cron
+ * dispatcher in routes/polymarket.js prefers fanning out to multiple Vercel
+ * invocations (one per backtest) and only falls back to this when
+ * self-fan-out is disabled.
+ */
+async function runDailyAutoBacktests(options = {}) {
+  const { combos, eligibleGroups, strategies, error } = await planAutoBacktestCombos(options)
+
+  if (error || combos.length === 0) {
+    return {
+      success: false,
+      error: error || 'No combos planned for auto backtest run.',
+      attempted: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      results: [],
+    }
+  }
+
   const startedAt = new Date()
   console.log(
-    `[auto-backtest] Starting daily auto run: ${combos.length} planned (` +
-    `${eligibleGroups.length} eligible groups, ${requestedStrategies.length} strategies)`
+    `[auto-backtest] Starting sequential auto run: ${combos.length} planned (` +
+    `${eligibleGroups.length} eligible groups, ${strategies.length} strategies)`
   )
 
   const results = []
@@ -1105,8 +1113,6 @@ async function runDailyAutoBacktests(options = {}) {
       })
     } catch (err) {
       const message = String(err?.message || err)
-      // Treat insufficient-data and empty-group failures as soft skips so they
-      // don't drown out genuine errors in the daily digest.
       const isSoftSkip =
         message.includes('Insufficient data for backtest') ||
         message.includes('not found or has no markets')
@@ -1151,6 +1157,7 @@ async function runDailyAutoBacktests(options = {}) {
 module.exports = {
   STRATEGIES,
   runBacktest,
+  planAutoBacktestCombos,
   runDailyAutoBacktests,
   getBacktestResults,
   getBestBacktest,
