@@ -25,6 +25,44 @@ const CALENDAR_CACHE_TTL_MS = 90 * 1000
 const TRACKABLE_CATEGORY_OPTIONS = CATEGORY_FILTERS.filter((item) => item.id !== "all")
 const DEFAULT_TRACKED_CATEGORIES = TRACKABLE_CATEGORY_OPTIONS.map((item) => item.id)
 
+// Boss priority groups — mirrors backend POLYMARKET_ARCHIVE_PRIORITY_GROUPS defaults
+// (see backend/src/services/polymarketDataArchiver.js loadPriorityGroups).
+const PRIORITY_GROUPS = [
+  {
+    id: "elon-tweets",
+    label: "Elon Tweets",
+    chip: "bg-sky-100 text-sky-800 border-sky-200",
+    keywords: ["elon", "musk", "tweet", "@elonmusk"]
+  },
+  {
+    id: "economic-policy",
+    label: "Economic Policy",
+    chip: "bg-amber-100 text-amber-800 border-amber-200",
+    keywords: ["fed", "interest rate", "inflation", "cpi", "fomc", "tariff", "gdp", "unemployment"]
+  },
+  {
+    id: "nba",
+    label: "NBA",
+    chip: "bg-orange-100 text-orange-800 border-orange-200",
+    keywords: ["nba", "lakers", "celtics", "warriors", "playoff", "knicks", "nuggets"]
+  },
+  {
+    id: "movies",
+    label: "Movies",
+    chip: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200",
+    keywords: ["movie", "box office", "oscar", "academy award", "film", "rotten tomatoes"]
+  }
+]
+
+function getEventPriorityGroupIds(event) {
+  if (!event) return []
+  const haystack = `${event.question || ""} ${event.description || ""}`.toLowerCase()
+  if (!haystack.trim()) return []
+  return PRIORITY_GROUPS.filter((group) =>
+    group.keywords.some((kw) => haystack.includes(kw))
+  ).map((group) => group.id)
+}
+
 function buildDayKey(value) {
   return format(value, "yyyy-MM-dd")
 }
@@ -66,6 +104,8 @@ export default function EventCalendar() {
   const [selectedDay, setSelectedDay] = useState(new Date())
   const [includePast, setIncludePast] = useState(true)
   const [selectedCategories, setSelectedCategories] = useState(DEFAULT_TRACKED_CATEGORIES)
+  // Empty array = no priority-group filter (show all). Toggle a chip to narrow.
+  const [selectedPriorityGroups, setSelectedPriorityGroups] = useState([])
 
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -89,7 +129,7 @@ export default function EventCalendar() {
           categories: selectedCategories.join(","),
           includePast: includePast ? "true" : "false",
             upcomingLimit: "300",
-            pastLimit: "0"
+            pastLimit: includePast ? "120" : "0"
           })
           const cacheKey = `calendar-events:${params.toString()}`
           const rawCached = sessionStorage.getItem(cacheKey)
@@ -100,7 +140,14 @@ export default function EventCalendar() {
               parsedCached?.expiresAt > Date.now() &&
               Array.isArray(parsedCached?.events)
             ) {
-              setEvents(parsedCached.events)
+              setEvents(
+                parsedCached.events.map((event) => ({
+                  ...event,
+                  priorityGroupIds: Array.isArray(event.priorityGroupIds)
+                    ? event.priorityGroupIds
+                    : getEventPriorityGroupIds(event)
+                }))
+              )
               setLoading(false)
               return
             }
@@ -119,7 +166,10 @@ export default function EventCalendar() {
         }
 
         const data = await response.json()
-        const fetchedEvents = Array.isArray(data.events) ? data.events : []
+        const fetchedEvents = (Array.isArray(data.events) ? data.events : []).map((event) => ({
+          ...event,
+          priorityGroupIds: getEventPriorityGroupIds(event)
+        }))
         setEvents(fetchedEvents)
         sessionStorage.setItem(
           cacheKey,
@@ -165,10 +215,30 @@ export default function EventCalendar() {
     }
   }, [focusDate, viewMode])
 
+  const visibleEvents = useMemo(() => {
+    if (selectedPriorityGroups.length === 0) return events
+    const wanted = new Set(selectedPriorityGroups)
+    return events.filter((event) =>
+      Array.isArray(event.priorityGroupIds) &&
+      event.priorityGroupIds.some((id) => wanted.has(id))
+    )
+  }, [events, selectedPriorityGroups])
+
+  const priorityGroupCounts = useMemo(() => {
+    const counts = Object.fromEntries(PRIORITY_GROUPS.map((group) => [group.id, 0]))
+    for (const event of events) {
+      if (!Array.isArray(event.priorityGroupIds)) continue
+      for (const id of event.priorityGroupIds) {
+        if (counts[id] !== undefined) counts[id] += 1
+      }
+    }
+    return counts
+  }, [events])
+
   const eventsByDay = useMemo(() => {
     const grouped = new Map()
 
-    for (const event of events) {
+    for (const event of visibleEvents) {
       if (!event?.eventDate) continue
       const eventDate = parseISO(event.eventDate)
       if (Number.isNaN(eventDate.getTime())) continue
@@ -183,7 +253,7 @@ export default function EventCalendar() {
     }
 
     return grouped
-  }, [events])
+  }, [visibleEvents])
 
   const selectedDayEvents = useMemo(() => {
     const dayKey = buildDayKey(selectedDay)
@@ -191,21 +261,21 @@ export default function EventCalendar() {
   }, [eventsByDay, selectedDay])
 
   const pastEvents = useMemo(() => {
-    return events
+    return visibleEvents
       .filter((event) => event.status === "past")
       .sort((firstEvent, secondEvent) => new Date(secondEvent.eventDate) - new Date(firstEvent.eventDate))
       .slice(0, 8)
-  }, [events])
+  }, [visibleEvents])
 
   const pastEventCount = useMemo(() => {
-    return events.filter((event) => event.status === "past").length
-  }, [events])
+    return visibleEvents.filter((event) => event.status === "past").length
+  }, [visibleEvents])
 
   const backtestedEventCount = useMemo(() => {
-    return events.filter(
+    return visibleEvents.filter(
       (event) => event.status === "past" && hasBacktest(event.backtestMetrics)
     ).length
-  }, [events])
+  }, [visibleEvents])
 
   const handlePeriodStep = (direction) => {
     if (viewMode === "week") {
@@ -227,6 +297,14 @@ export default function EventCalendar() {
 
       return [...currentCategories, categoryId]
     })
+  }
+
+  const togglePriorityGroup = (groupId) => {
+    setSelectedPriorityGroups((current) =>
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId]
+    )
   }
 
   const openAnalysis = (event) => {
@@ -330,6 +408,49 @@ export default function EventCalendar() {
               />
               Include previous events
             </label>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Priority Groups
+              </span>
+              {PRIORITY_GROUPS.map((group) => {
+                const isActive = selectedPriorityGroups.includes(group.id)
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => togglePriorityGroup(group.id)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      isActive
+                        ? `${group.chip} border-current`
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
+                    }`}
+                    title={`Keywords: ${group.keywords.join(", ")}`}
+                  >
+                    {group.label}
+                    <span className="ml-1.5 rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                      {priorityGroupCounts[group.id] ?? 0}
+                    </span>
+                  </button>
+                )
+              })}
+              {selectedPriorityGroups.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPriorityGroups([])}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="text-xs text-slate-500">
+              {selectedPriorityGroups.length === 0
+                ? "Showing all events. Toggle a priority group to filter the calendar."
+                : `Filtered to ${visibleEvents.length} event${visibleEvents.length === 1 ? "" : "s"} matching ${selectedPriorityGroups.length} priority group${selectedPriorityGroups.length === 1 ? "" : "s"}.`}
+            </div>
           </div>
 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -523,6 +644,19 @@ export default function EventCalendar() {
                           {isPastEvent ? "Past" : "Upcoming"}
                         </span>
                         <span className="text-slate-500">{formatEventTime(event.eventDate)}</span>
+                        {Array.isArray(event.priorityGroupIds) && event.priorityGroupIds.length > 0 && (
+                          <span className="flex flex-wrap gap-1">
+                            {event.priorityGroupIds.map((groupId) => {
+                              const group = PRIORITY_GROUPS.find((g) => g.id === groupId)
+                              if (!group) return null
+                              return (
+                                <span key={groupId} className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${group.chip}`}>
+                                  {group.label}
+                                </span>
+                              )
+                            })}
+                          </span>
+                        )}
                       </div>
 
                       <div className="mt-2 flex gap-3">
