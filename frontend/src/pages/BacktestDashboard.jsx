@@ -706,15 +706,17 @@ export default function BacktestDashboard() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Strategy</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Market</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Category</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">ROI</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Trades</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Win Rate</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Sharpe</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Date</th>
-                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Actions</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Strategy</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Market</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Category</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">ROI</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Trades</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Win Rate</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Sharpe</th>
+                          <th className="px-3 py-3 text-left font-semibold text-gray-900">Date</th>
+                          <th className="sticky right-0 bg-gray-50 px-3 py-3 text-left font-semibold text-gray-900 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.1)]">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
@@ -743,45 +745,45 @@ export default function BacktestDashboard() {
                               }}
                               className="hover:bg-blue-50 cursor-pointer transition"
                             >
-                              <td className="px-6 py-3">
+                              <td className="px-3 py-3">
                                 <div className="font-medium text-gray-900">{bt.strategyName}</div>
                                 <div className="text-xs text-gray-500">{bt.group?.name || "Unknown group"}</div>
                               </td>
-                              <td className="px-6 py-3">
-                                <div className="max-w-sm truncate font-medium text-gray-900">
+                              <td className="px-3 py-3">
+                                <div className="max-w-[14rem] truncate font-medium text-gray-900" title={marketContext.marketTitle}>
                                   {marketContext.marketTitle}
                                 </div>
                                 <div className="text-xs text-gray-500">
                                   {marketContext.marketId ? `ID: ${marketContext.marketId}` : "ID unavailable"}
                                 </div>
                               </td>
-                              <td className="px-6 py-3">
+                              <td className="px-3 py-3">
                                 <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getPolymarketCategoryMeta(marketContext.marketCategoryId).color}`}>
                                   {marketContext.marketCategory}
                                 </span>
                               </td>
-                              <td className={`px-6 py-3 font-semibold ${roiColor(bt.roi)}`}>
+                              <td className={`px-3 py-3 font-semibold ${roiColor(bt.roi)}`}>
                                 {bt.roi.toFixed(2)}%
                               </td>
-                              <td className="px-6 py-3 text-gray-600">
+                              <td className="px-3 py-3 text-gray-600">
                                 {bt.totalTrades === 0
                                   ? "No trades"
                                   : `${bt.totalTrades} (${bt.winningTrades}W / ${bt.losingTrades}L)`}
                               </td>
-                              <td className={`px-6 py-3 font-semibold ${bt.totalTrades === 0 ? "text-gray-500" : winRateColor(bt.winRate)}`}>
+                              <td className={`px-3 py-3 font-semibold ${bt.totalTrades === 0 ? "text-gray-500" : winRateColor(bt.winRate)}`}>
                                 {bt.totalTrades === 0 ? "No trades" : `${bt.winRate.toFixed(2)}%`}
                               </td>
-                              <td className="px-6 py-3 text-gray-600">{bt.totalTrades === 0 ? "No trades" : "N/A"}</td>
-                              <td className="px-6 py-3 text-gray-500 text-xs">
+                              <td className="px-3 py-3 text-gray-600">{bt.totalTrades === 0 ? "No trades" : "N/A"}</td>
+                              <td className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">
                                 {formatDateTime(bt.createdAt)}
                               </td>
-                              <td className="px-6 py-3 text-xs">
+                              <td className="sticky right-0 bg-white px-3 py-3 text-xs shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.1)] group-hover:bg-blue-50">
                                 <a
                                   href={detailPath}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(event) => event.stopPropagation()}
-                                  className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 hover:bg-blue-100"
+                                  className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 hover:bg-blue-100 whitespace-nowrap"
                                   title="Open this backtest in a new tab"
                                 >
                                   Open ↗
