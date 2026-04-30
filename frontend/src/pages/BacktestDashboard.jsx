@@ -714,16 +714,33 @@ export default function BacktestDashboard() {
                           <th className="px-6 py-3 text-left font-semibold text-gray-900">Win Rate</th>
                           <th className="px-6 py-3 text-left font-semibold text-gray-900">Sharpe</th>
                           <th className="px-6 py-3 text-left font-semibold text-gray-900">Date</th>
+                          <th className="px-6 py-3 text-left font-semibold text-gray-900">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {backtests.map((bt, i) => {
                           const marketContext = getBacktestMarketContext(bt, liveMarkets)
+                          const detailPath = `/polymarket/backtest/${bt.id}`
 
                           return (
                             <tr
                               key={i}
-                              onClick={() => navigate(`/polymarket/backtest/${bt.id}`)}
+                              onClick={(event) => {
+                                // Ctrl/Cmd/Shift click → open in a new tab so users can compare
+                                // multiple backtest results side-by-side without losing this list.
+                                if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                                  window.open(detailPath, "_blank", "noopener,noreferrer")
+                                  return
+                                }
+                                navigate(detailPath)
+                              }}
+                              onAuxClick={(event) => {
+                                // Middle-click also opens in a new tab.
+                                if (event.button === 1) {
+                                  event.preventDefault()
+                                  window.open(detailPath, "_blank", "noopener,noreferrer")
+                                }
+                              }}
                               className="hover:bg-blue-50 cursor-pointer transition"
                             >
                               <td className="px-6 py-3">
@@ -757,6 +774,18 @@ export default function BacktestDashboard() {
                               <td className="px-6 py-3 text-gray-600">{bt.totalTrades === 0 ? "No trades" : "N/A"}</td>
                               <td className="px-6 py-3 text-gray-500 text-xs">
                                 {formatDateTime(bt.createdAt)}
+                              </td>
+                              <td className="px-6 py-3 text-xs">
+                                <a
+                                  href={detailPath}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 hover:bg-blue-100"
+                                  title="Open this backtest in a new tab"
+                                >
+                                  Open ↗
+                                </a>
                               </td>
                             </tr>
                           )
