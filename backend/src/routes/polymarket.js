@@ -4137,6 +4137,75 @@ router.get("/archive/ingest/run", handleArchiveIngestRun)
 router.post("/archive/ingest/run", handleArchiveIngestRun)
 
 /**
+ * GET/POST /polymarket/backtest/auto-run
+ *
+ * Cron-friendly endpoint that kicks off a batch of automated backtests so
+ * that each run produces its own Discord notification (boss requirement:
+ * "individual backtests have their own notifications, ~10 new backtests per
+ * day"). Authorized with the same ARCHIVE_CRON_SECRET / CRON_SECRET as the
+ * archive ingest cron.
+ *
+ * Optional query/body params:
+ *   - maxRuns: number of backtests to attempt (default 10)
+ *   - strategies: comma-separated list (default: all built-in strategies)
+ */
+async function handleAutoBacktestRun(req, res) {
+  try {
+    if (!isArchiveIngestAuthorized(req)) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized auto-backtest trigger",
+      })
+    }
+
+    const maxRuns = parsePositiveInt(
+      req.body?.maxRuns ?? req.query.maxRuns,
+      10
+    )
+
+    const rawStrategies = req.body?.strategies ?? req.query.strategies
+    let strategies = null
+    if (typeof rawStrategies === "string" && rawStrategies.trim() !== "") {
+      strategies = rawStrategies
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    } else if (Array.isArray(rawStrategies)) {
+      strategies = rawStrategies.map((s) => String(s).trim()).filter(Boolean)
+    }
+
+    const backtestEngine = require("../services/backtestEngine")
+    const summary = await backtestEngine.runDailyAutoBacktests({
+      maxRuns,
+      ...(strategies ? { strategies } : {}),
+    })
+
+    if (!summary?.success) {
+      return res.status(409).json({
+        success: false,
+        error: summary?.error || "Auto backtest run did not produce any results",
+        summary,
+      })
+    }
+
+    return res.json({
+      success: true,
+      message: `Auto-backtest run complete: ${summary.succeeded} ok / ${summary.failed} failed / ${summary.skipped} skipped`,
+      summary,
+    })
+  } catch (error) {
+    console.error("[error] Auto-backtest run failed:", error)
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    })
+  }
+}
+
+router.get("/backtest/auto-run", handleAutoBacktestRun)
+router.post("/backtest/auto-run", handleAutoBacktestRun)
+
+/**
  * POST /polymarket/archive/quality-report/run
  * Generate and persist a new archive quality report on demand
  */

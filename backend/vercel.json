@@ -10,5 +10,11 @@
       "source": "/(.*)",
       "destination": "/api/index.js"
     }
+  ],
+  "crons": [
+    {
+      "path": "/polymarket/backtest/auto-run?maxRuns=10",
+      "schedule": "0 13 * * *"
+    }
   ]
 }

@@ -1015,9 +1015,143 @@ async function getBacktestReport(backtestId) {
   };
 }
 
+/**
+ * Run a batch of automated backtests across the available market groups.
+ *
+ * Boss requirement: each backtest should produce its own Discord notification
+ * (instead of one generic "archive completed" digest), and we should generate
+ * roughly 10 fresh backtests per day. This helper picks up to `maxRuns`
+ * (group, strategy) combinations, rotating across groups + strategies so the
+ * notification feed stays varied. `runBacktest` already fires
+ * `discord.notifyBacktestCompleted` per run, so each successful execution
+ * automatically produces an individual Discord embed.
+ */
+async function runDailyAutoBacktests(options = {}) {
+  const maxRuns = Math.max(1, parseInt(options.maxRuns, 10) || 10)
+  const requestedStrategies = Array.isArray(options.strategies) && options.strategies.length > 0
+    ? options.strategies.filter((name) => STRATEGIES[name])
+    : Object.keys(STRATEGIES)
+
+  if (requestedStrategies.length === 0) {
+    return {
+      success: false,
+      error: 'No valid strategies configured for auto backtest run.',
+      attempted: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      results: [],
+    }
+  }
+
+  // Pull every group; pick the ones with at least one matched market so we
+  // don't waste a slot on an empty group. Order by most-recently-updated so
+  // the daily run favours actively-curated groups.
+  const allGroups = await prisma.marketGroup.findMany({
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true, name: true, markets: true },
+  })
+
+  const eligibleGroups = allGroups.filter((g) => Array.isArray(g.markets) && g.markets.length > 0)
+  if (eligibleGroups.length === 0) {
+    return {
+      success: false,
+      error: 'No market groups with markets are available for auto backtest.',
+      attempted: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      results: [],
+    }
+  }
+
+  // Build (group, strategy) combinations in round-robin fashion so that
+  // - every group gets a turn before any group gets a second one;
+  // - strategies rotate so the digest covers momentum / meanReversion / volatility.
+  const combos = []
+  let strategyIdx = 0
+  for (let cycle = 0; combos.length < maxRuns; cycle += 1) {
+    let addedThisCycle = 0
+    for (const group of eligibleGroups) {
+      if (combos.length >= maxRuns) break
+      const strategy = requestedStrategies[strategyIdx % requestedStrategies.length]
+      strategyIdx += 1
+      combos.push({ groupName: group.name, strategyName: strategy })
+      addedThisCycle += 1
+    }
+    if (addedThisCycle === 0) break
+  }
+
+  const startedAt = new Date()
+  console.log(
+    `[auto-backtest] Starting daily auto run: ${combos.length} planned (` +
+    `${eligibleGroups.length} eligible groups, ${requestedStrategies.length} strategies)`
+  )
+
+  const results = []
+  let succeeded = 0
+  let failed = 0
+  let skipped = 0
+
+  for (const combo of combos) {
+    try {
+      const runResult = await runBacktest(combo.groupName, combo.strategyName, {}, {})
+      succeeded += 1
+      results.push({
+        groupName: combo.groupName,
+        strategyName: combo.strategyName,
+        backtestId: runResult?.backtestId || null,
+        status: 'ok',
+      })
+    } catch (err) {
+      const message = String(err?.message || err)
+      // Treat insufficient-data and empty-group failures as soft skips so they
+      // don't drown out genuine errors in the daily digest.
+      const isSoftSkip =
+        message.includes('Insufficient data for backtest') ||
+        message.includes('not found or has no markets')
+
+      if (isSoftSkip) {
+        skipped += 1
+      } else {
+        failed += 1
+      }
+
+      console.warn(
+        `[auto-backtest] ${combo.groupName} / ${combo.strategyName} ${isSoftSkip ? 'skipped' : 'failed'}: ${message}`
+      )
+      results.push({
+        groupName: combo.groupName,
+        strategyName: combo.strategyName,
+        backtestId: null,
+        status: isSoftSkip ? 'skipped' : 'failed',
+        error: message,
+      })
+    }
+  }
+
+  const elapsedMs = Date.now() - startedAt.getTime()
+  console.log(
+    `[auto-backtest] Done: ${succeeded} ok / ${failed} failed / ${skipped} skipped in ${elapsedMs}ms`
+  )
+
+  return {
+    success: true,
+    startedAt: startedAt.toISOString(),
+    completedAt: new Date().toISOString(),
+    elapsedMs,
+    attempted: combos.length,
+    succeeded,
+    failed,
+    skipped,
+    results,
+  }
+}
+
 module.exports = {
   STRATEGIES,
   runBacktest,
+  runDailyAutoBacktests,
   getBacktestResults,
   getBestBacktest,
   getBacktestReport,
