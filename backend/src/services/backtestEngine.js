@@ -1036,7 +1036,26 @@ async function planAutoBacktestCombos(options = {}) {
     select: { id: true, name: true, markets: true },
   })
 
-  const eligibleGroups = allGroups.filter((g) => Array.isArray(g.markets) && g.markets.length > 0)
+  // Optional `groups` filter: only consider these named groups (case-insensitive).
+  // Used by the daily cron that targets the boss-priority groups
+  // (Elon Tweets, Economic Policy, NBA, Movies).
+  const requestedGroupNames = Array.isArray(options.groups) && options.groups.length > 0
+    ? options.groups.map((g) => String(g).trim().toLowerCase()).filter(Boolean)
+    : null
+
+  let eligibleGroups = allGroups.filter((g) => Array.isArray(g.markets) && g.markets.length > 0)
+  if (requestedGroupNames) {
+    const wanted = new Set(requestedGroupNames)
+    eligibleGroups = eligibleGroups.filter((g) => wanted.has(String(g.name).toLowerCase()))
+    if (eligibleGroups.length === 0) {
+      return {
+        combos: [],
+        eligibleGroups: [],
+        strategies: requestedStrategies,
+        error: `No market groups matched the requested names: ${requestedGroupNames.join(', ')}`,
+      }
+    }
+  }
   if (eligibleGroups.length === 0) {
     return { combos: [], eligibleGroups: [], strategies: requestedStrategies, error: 'No market groups with markets are available.' }
   }

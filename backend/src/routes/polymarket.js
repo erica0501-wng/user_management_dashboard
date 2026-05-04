@@ -4190,6 +4190,16 @@ async function handleAutoBacktestRun(req, res) {
       strategies = rawStrategies.map((s) => String(s).trim()).filter(Boolean)
     }
 
+    // Optional `groups` filter (comma-separated names) so a cron can target
+    // only specific market groups (e.g. Elon Tweets, Economic Policy, NBA, Movies).
+    const rawGroups = req.body?.groups ?? req.query.groups
+    let groups = null
+    if (typeof rawGroups === "string" && rawGroups.trim() !== "") {
+      groups = rawGroups.split(",").map((s) => s.trim()).filter(Boolean)
+    } else if (Array.isArray(rawGroups)) {
+      groups = rawGroups.map((s) => String(s).trim()).filter(Boolean)
+    }
+
     const backtestEngine = require("../services/backtestEngine")
 
     // Inline mode = legacy sequential behaviour, kept for local dev.
@@ -4197,6 +4207,7 @@ async function handleAutoBacktestRun(req, res) {
       const summary = await backtestEngine.runDailyAutoBacktests({
         maxRuns,
         ...(strategies ? { strategies } : {}),
+        ...(groups ? { groups } : {}),
       })
       if (!summary?.success) {
         return res.status(409).json({ success: false, error: summary?.error || "Auto backtest run produced no results", summary })
@@ -4214,6 +4225,7 @@ async function handleAutoBacktestRun(req, res) {
     const { combos, error } = await backtestEngine.planAutoBacktestCombos({
       maxRuns,
       ...(strategies ? { strategies } : {}),
+      ...(groups ? { groups } : {}),
     })
 
     if (error || combos.length === 0) {
