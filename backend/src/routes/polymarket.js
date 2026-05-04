@@ -4083,7 +4083,112 @@ async function handleArchiveIngestRun(req, res) {
       false
     )
 
-    const runResult = await polymarketDataArchiver.archiveSnapshots()
+    // Optional priority-group filter: ?group=Movies or ?groups=Movies,Economic%20Policy
+    // Combined with ?skipGenericFeed=true to make a single Vercel lambda invocation
+    // only process one priority group (avoids 300s timeout starving large groups).
+    const rawGroups = req.body?.groups ?? req.body?.group ?? req.query.groups ?? req.query.group
+    let priorityGroupNames = null
+    if (Array.isArray(rawGroups)) {
+      priorityGroupNames = rawGroups.map((g) => String(g)).filter(Boolean)
+    } else if (typeof rawGroups === "string" && rawGroups.trim() !== "") {
+      priorityGroupNames = rawGroups.split(",").map((g) => g.trim()).filter(Boolean)
+    }
+    const skipGenericFeed = parseBoolean(
+      req.body?.skipGenericFeed ?? req.query.skipGenericFeed,
+      Boolean(priorityGroupNames)
+    )
+    const inline = parseBoolean(req.body?.inline ?? req.query.inline, false)
+
+    // Fan-out mode: when no specific group was requested AND we're not forced inline,
+    // dispatch one parallel sub-invocation per priority group (each gets its own 300s
+    // Vercel budget). This prevents large groups (Movies, Economic Policy) from being
+    // starved when a single lambda has to process all 4 groups + generic feed.
+    if (!priorityGroupNames && !inline) {
+      const baseUrl = getSelfBaseUrl(req)
+      if (!baseUrl) {
+        return res.status(500).json({
+          success: false,
+          error: "Cannot determine self base URL for fan-out (set SELF_BASE_URL env)"
+        })
+      }
+
+      const secret = getArchiveIngestSecret()
+      const authHeader = secret ? { Authorization: `Bearer ${secret}` } : {}
+      const groupNames = polymarketDataArchiver.priorityGroups.map((g) => g.name)
+
+      // One sub-invocation per priority group (each runs with skipGenericFeed=true
+      // so it ONLY processes that group). Plus one "generic feed only" sub-call to
+      // keep non-priority markets fresh.
+      const tasks = [
+        ...groupNames.map((name) => ({ label: `group:${name}`, body: { group: name, inline: true, skipGenericFeed: true } })),
+        { label: "generic-feed", body: { inline: true, skipGenericFeed: false, groups: "__none__" } }
+      ]
+
+      console.log(`[archive-ingest] Fan-out: dispatching ${tasks.length} parallel sub-invocations`)
+
+      const dispatched = await Promise.allSettled(
+        tasks.map(async (task) => {
+          const response = await fetch(`${baseUrl}/polymarket/archive/ingest/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeader },
+            body: JSON.stringify(task.body)
+          })
+          const body = await response.json().catch(() => ({}))
+          return {
+            label: task.label,
+            httpStatus: response.status,
+            ok: response.ok && body?.success !== false,
+            archivedMarkets: body?.run?.archivedMarkets,
+            archivedOrderBooks: body?.run?.archivedOrderBooks
+          }
+        })
+      )
+
+      const results = dispatched.map((s, i) =>
+        s.status === "fulfilled"
+          ? s.value
+          : { label: tasks[i].label, ok: false, error: String(s.reason?.message || s.reason) }
+      )
+      const succeeded = results.filter((r) => r.ok).length
+
+      clearArchiveCache()
+
+      // Refresh MarketGroup.markets so newly archived market IDs become visible to
+      // backtests. Without this, group.markets stays frozen at whatever it was the
+      // last time someone manually called /market-groups/categorize, and backtests
+      // see "no fresh data" even though snapshots are landing.
+      let categorizationOk = false
+      try {
+        const marketGrouping = require("../services/marketGrouping")
+        await marketGrouping.categorizeAllMarkets()
+        categorizationOk = true
+      } catch (catError) {
+        console.error("[archive-ingest] categorizeAllMarkets failed (non-fatal):", catError.message)
+      }
+
+      return res.json({
+        success: true,
+        mode: "fan-out",
+        message: `Dispatched ${tasks.length} archive sub-invocations: ${succeeded} ok / ${tasks.length - succeeded} failed`,
+        attempted: tasks.length,
+        succeeded,
+        failed: tasks.length - succeeded,
+        categorizationOk,
+        results
+      })
+    }
+
+    // Inline mode (or specific group requested): run archive directly in this invocation.
+    // Special token "__none__" means "skip all priority groups, only process generic feed".
+    const effectivePriorityNames =
+      priorityGroupNames && priorityGroupNames.length === 1 && priorityGroupNames[0] === "__none__"
+        ? []
+        : priorityGroupNames
+
+    const runResult = await polymarketDataArchiver.archiveSnapshots({
+      ...(effectivePriorityNames ? { priorityGroupNames: effectivePriorityNames } : {}),
+      skipGenericFeed
+    })
     if (!runResult?.success) {
       return res.status(500).json({
         success: false,

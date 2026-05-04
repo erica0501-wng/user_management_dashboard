@@ -14,7 +14,7 @@
   "crons": [
     {
       "path": "/polymarket/archive/ingest/run",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/polymarket/backtest/auto-run?maxRuns=10",

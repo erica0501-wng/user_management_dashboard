@@ -513,22 +513,37 @@ class PolymarketDataArchiver {
     return merged.slice(0, cap)
   }
 
-  async fetchMarketsForArchive() {
-    const openMarkets = await this.fetchMarkets({ limit: this.marketLimit, closed: false })
+  async fetchMarketsForArchive(options = {}) {
+    // Optional filters used by per-group cron / manual backfill so a single Vercel
+    // lambda invocation only has to process one priority group at a time.
+    const requestedGroupNames = Array.isArray(options.priorityGroupNames)
+      ? new Set(options.priorityGroupNames.map((name) => String(name).toLowerCase()))
+      : null
+    const skipGenericFeed = Boolean(options.skipGenericFeed)
 
-    const allMarkets = [...openMarkets]
-    if (this.includeClosedMarkets) {
-      const closedMarkets = await this.fetchMarkets({
-        limit: this.closedMarketLimit,
-        closed: true
-      })
-      allMarkets.push(...this.filterRecentClosedMarkets(closedMarkets))
+    const allMarkets = []
+    if (!skipGenericFeed) {
+      const openMarkets = await this.fetchMarkets({ limit: this.marketLimit, closed: false })
+      allMarkets.push(...openMarkets)
+      if (this.includeClosedMarkets) {
+        const closedMarkets = await this.fetchMarkets({
+          limit: this.closedMarketLimit,
+          closed: true
+        })
+        allMarkets.push(...this.filterRecentClosedMarkets(closedMarkets))
+      }
     }
+
+    const targetPriorityGroups = requestedGroupNames
+      ? this.priorityGroups.filter((group) =>
+          requestedGroupNames.has(String(group?.name || "").toLowerCase())
+        )
+      : this.priorityGroups
 
     // Pull priority-group markets last so dedupe keeps the first (generic-feed) entry,
     // but mark every priority-group market so it survives deprioritization trimming.
     const priorityResults = await Promise.allSettled(
-      this.priorityGroups.map((group) => this.fetchMarketsForGroup(group))
+      targetPriorityGroups.map((group) => this.fetchMarketsForGroup(group))
     )
     // Round-robin interleave so partial runs (e.g. Vercel timeouts) still touch every
     // priority group instead of exhausting the first group's quota first.
@@ -706,7 +721,7 @@ class PolymarketDataArchiver {
     }
   }
 
-  async archiveSnapshots() {
+  async archiveSnapshots(options = {}) {
     if (this.isArchiving) {
       console.log("[info] Polymarket archive run skipped because previous run is still active")
       return {
@@ -725,7 +740,7 @@ class PolymarketDataArchiver {
     const newlyArchivedClosed = []
 
     try {
-      const rawMarkets = await this.fetchMarketsForArchive()
+      const rawMarkets = await this.fetchMarketsForArchive(options)
 
       if (rawMarkets.length === 0) {
         console.log("[info] No Polymarket markets returned for archival")
