@@ -13,6 +13,10 @@
   ],
   "crons": [
     {
+      "path": "/polymarket/archive/ingest/run",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/polymarket/backtest/auto-run?maxRuns=10",
       "schedule": "0 13 * * *"
     },
