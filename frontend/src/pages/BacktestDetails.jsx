@@ -164,10 +164,105 @@ export default function BacktestDetails() {
 
   const { backtest, trades, summary } = report
   const markets = Array.isArray(report.markets) ? report.markets : []
+
+  // Aggregate realized P/L per market across the entire backtest (all markets, not just selected one).
+  // Uses SELL trades' `profit` field which already represents realized P/L for that market's full position.
+  const marketPnlBreakdown = (() => {
+    const all = Array.isArray(trades) ? trades : []
+    const byMarket = new Map() // marketId -> { profit, sellCount, buyCount }
+    all.forEach((trade) => {
+      const id = String(trade.marketId || '')
+      if (!id) return
+      const entry = byMarket.get(id) || { profit: 0, sellCount: 0, buyCount: 0 }
+      if (trade.action === "BUY") entry.buyCount += 1
+      if (trade.action === "SELL") {
+        entry.sellCount += 1
+        if (typeof trade.profit === "number" && Number.isFinite(trade.profit)) {
+          entry.profit += trade.profit
+        }
+      }
+      byMarket.set(id, entry)
+    })
+    const rows = Array.from(byMarket.entries()).map(([marketId, info]) => {
+      const market = markets.find((m) => String(m.marketId) === marketId)
+      const displayName = market
+        ? getPolymarketMarketMeta(market, `Market ${marketId}`).displayName
+        : `Market ${marketId}`
+      return { marketId, displayName, ...info }
+    })
+    rows.sort((a, b) => b.profit - a.profit)
+    const totalProfit = rows.reduce((sum, r) => sum + r.profit, 0)
+    return { rows, totalProfit }
+  })()
+
+  // Aggregate gross gains vs gross losses across every SELL trade so the summary panels
+  // can show *where* the net P/L is coming from (winners vs losers, biggest contributors).
+  const pnlAttribution = (() => {
+    const all = Array.isArray(trades) ? trades : []
+    let grossGain = 0
+    let grossLoss = 0
+    let biggestWin = null   // { profit, marketName, marketId }
+    let biggestLoss = null
+    all.forEach((trade) => {
+      if (trade.action !== "SELL") return
+      const profit = Number(trade.profit)
+      if (!Number.isFinite(profit)) return
+      const market = markets.find((m) => String(m.marketId) === String(trade.marketId))
+      const marketName = market
+        ? getPolymarketMarketMeta(market, `Market ${trade.marketId}`).displayName
+        : `Market ${trade.marketId}`
+      const entry = { profit, marketName, marketId: String(trade.marketId) }
+      if (profit > 0) {
+        grossGain += profit
+        if (!biggestWin || profit > biggestWin.profit) biggestWin = entry
+      } else if (profit < 0) {
+        grossLoss += profit
+        if (!biggestLoss || profit < biggestLoss.profit) biggestLoss = entry
+      }
+    })
+    return { grossGain, grossLoss, netProfit: grossGain + grossLoss, biggestWin, biggestLoss }
+  })()
   const selectedMarket = markets.find((market) => String(market.marketId) === String(selectedMarketId)) || null
   const marketCard = selectedMarket || markets[0] || null
   const selectedTrades = (trades || []).filter((trade) => String(trade.marketId) === String(selectedMarketId))
   const sortedTrades = [...selectedTrades].sort((left, right) => new Date(left.time) - new Date(right.time))
+
+  // Link BUY trades to the SELL that closed them (a SELL liquidates the entire open position
+  // for that market, so all BUYs since the prior SELL are closed by it). This lets us show
+  // per-buy realized profit/loss and which BUYs each SELL closed.
+  const tradeLinkage = (() => {
+    const buyMeta = new Map()   // sortedTrades index -> { closedBySellRow, realizedProfit }
+    const sellMeta = new Map()  // sortedTrades index -> { closedBuyRows: number[], avgEntryPrice }
+    let openBuys = []           // [{ rowIndex, shares, price }]
+    sortedTrades.forEach((trade, idx) => {
+      const rowNumber = idx + 1
+      if (trade.action === "BUY") {
+        openBuys.push({ rowIndex: idx, shares: Number(trade.shares) || 0, price: Number(trade.price) || 0 })
+      } else if (trade.action === "SELL" && openBuys.length > 0) {
+        const sellPrice = Number(trade.price) || 0
+        const sellTime = trade.time
+        const closedRows = []
+        let totalShares = 0
+        let totalCost = 0
+        openBuys.forEach((buy) => {
+          const realized = buy.shares * (sellPrice - buy.price)
+          buyMeta.set(buy.rowIndex, {
+            closedBySellRow: rowNumber,
+            closedBySellTime: sellTime,
+            closedBySellPrice: sellPrice,
+            realizedProfit: realized
+          })
+          closedRows.push(buy.rowIndex + 1)
+          totalShares += buy.shares
+          totalCost += buy.shares * buy.price
+        })
+        const avgEntryPrice = totalShares > 0 ? totalCost / totalShares : 0
+        sellMeta.set(idx, { closedBuyRows: closedRows, avgEntryPrice })
+        openBuys = []
+      }
+    })
+    return { buyMeta, sellMeta }
+  })()
   const selectedPriceSeries = Array.isArray(report.marketPriceSeries?.[String(selectedMarketId)])
     ? report.marketPriceSeries[String(selectedMarketId)]
     : []
@@ -345,6 +440,30 @@ export default function BacktestDetails() {
                   <span className="text-gray-600">Losing Trades</span>
                   <span className="font-semibold text-rose-600">{backtest.losingTrades}</span>
                 </div>
+                <div className="flex justify-between border-t border-gray-200 pt-3">
+                  <span className="text-gray-600">Gains from winners</span>
+                  <span className="font-semibold text-emerald-600">+{formatCurrency(pnlAttribution.grossGain)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Losses from losers</span>
+                  <span className="font-semibold text-rose-600">{formatCurrency(pnlAttribution.grossLoss)}</span>
+                </div>
+                {pnlAttribution.biggestWin && (
+                  <div className="flex justify-between gap-2">
+                    <span className="text-gray-600 truncate">Biggest winner</span>
+                    <span className="font-semibold text-emerald-600 text-right truncate" title={pnlAttribution.biggestWin.marketName}>
+                      +{formatCurrency(pnlAttribution.biggestWin.profit)}
+                    </span>
+                  </div>
+                )}
+                {pnlAttribution.biggestLoss && (
+                  <div className="flex justify-between gap-2">
+                    <span className="text-gray-600 truncate">Biggest loser</span>
+                    <span className="font-semibold text-rose-600 text-right truncate" title={pnlAttribution.biggestLoss.marketName}>
+                      {formatCurrency(pnlAttribution.biggestLoss.profit)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -373,9 +492,77 @@ export default function BacktestDetails() {
                     {formatPercent(backtest.roi)}
                   </span>
                 </div>
+                <div className="border-t border-gray-200 pt-3">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">P/L attribution</div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">+ Gains</span>
+                    <span className="font-semibold text-emerald-600">+{formatCurrency(pnlAttribution.grossGain)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">− Losses</span>
+                    <span className="font-semibold text-rose-600">{formatCurrency(pnlAttribution.grossLoss)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-t border-gray-100 pt-2 mt-2">
+                    <span className="text-gray-700 font-medium">= Net realized</span>
+                    <span className={`font-semibold ${pnlAttribution.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {pnlAttribution.netProfit >= 0 ? "+" : ""}{formatCurrency(pnlAttribution.netProfit)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Profit/Loss Breakdown by Market */}
+          {marketPnlBreakdown.rows.length > 0 && (
+            <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
+              <div className="mb-4 flex items-baseline justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Profit/Loss Breakdown by Market</h2>
+                <span className="text-sm text-gray-500">
+                  Total realized:{" "}
+                  <span className={`font-semibold ${marketPnlBreakdown.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                    {marketPnlBreakdown.totalProfit >= 0 ? "+" : ""}{formatCurrency(marketPnlBreakdown.totalProfit)}
+                  </span>
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left font-semibold text-gray-900">Market</th>
+                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Buys</th>
+                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Sells</th>
+                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Realized P/L</th>
+                      <th className="px-6 py-3 text-right font-semibold text-gray-900">% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {marketPnlBreakdown.rows.map((row) => {
+                      const share = marketPnlBreakdown.totalProfit !== 0
+                        ? (row.profit / marketPnlBreakdown.totalProfit) * 100
+                        : 0
+                      return (
+                        <tr key={row.marketId} className="hover:bg-gray-50">
+                          <td className="px-6 py-3">
+                            <div className="font-medium text-gray-900">{row.displayName}</div>
+                            <div className="text-xs text-gray-500">ID {row.marketId}</div>
+                          </td>
+                          <td className="px-6 py-3 text-right text-gray-700">{row.buyCount}</td>
+                          <td className="px-6 py-3 text-right text-gray-700">{row.sellCount}</td>
+                          <td className={`px-6 py-3 text-right font-semibold ${row.profit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {row.profit >= 0 ? "+" : ""}{formatCurrency(row.profit)}
+                          </td>
+                          <td className={`px-6 py-3 text-right text-xs font-medium ${row.profit >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                            {share >= 0 ? "+" : ""}{share.toFixed(1)}%
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Trade History Table */}
           <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
@@ -395,7 +582,12 @@ export default function BacktestDetails() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {sortedTrades.map((trade, idx) => (
+                  {sortedTrades.map((trade, idx) => {
+                    const buyInfo = tradeLinkage.buyMeta.get(idx)
+                    const sellInfo = tradeLinkage.sellMeta.get(idx)
+                    const isBuy = trade.action === "BUY"
+                    const isSell = trade.action === "SELL"
+                    return (
                     <tr key={idx} className="hover:bg-gray-50">
                       <td className="px-6 py-3 text-gray-900 font-medium">#{idx + 1}</td>
                       <td className="px-6 py-3">
@@ -414,22 +606,47 @@ export default function BacktestDetails() {
                         </span>
                       </td>
                       <td className="px-6 py-3 text-gray-600 text-xs">
-                        {formatTradeTime(trade.time)}
+                        <div>{formatTradeTime(trade.time)}</div>
+                        {isBuy && buyInfo && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">
+                            <span>↳ Sold</span>
+                            <span>{formatTradeTime(buyInfo.closedBySellTime)}</span>
+                            <span>@ ${buyInfo.closedBySellPrice.toFixed(4)}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-3 text-gray-900 font-medium">${trade.price.toFixed(4)}</td>
                       <td className="px-6 py-3 text-gray-600">${trade.amount.toFixed(2)}</td>
                       <td className="px-6 py-3">
-                        {trade.profit !== null ? (
-                          <span className={`font-semibold ${trade.profit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                            {trade.profit >= 0 ? "+" : ""}{formatCurrency(trade.profit)}
-                          </span>
+                        {isBuy && buyInfo ? (
+                          <div className="flex flex-col">
+                            <span className={`font-semibold ${buyInfo.realizedProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {buyInfo.realizedProfit >= 0 ? "+" : ""}{formatCurrency(buyInfo.realizedProfit)}
+                            </span>
+                            <span className="mt-0.5 text-[11px] font-medium text-indigo-700">Closed by trade #{buyInfo.closedBySellRow}</span>
+                          </div>
+                        ) : isBuy ? (
+                          <span className="text-xs font-medium text-amber-700">Open (not yet sold)</span>
+                        ) : trade.profit !== null && trade.profit !== undefined ? (
+                          <div className="flex flex-col">
+                            <span className={`font-semibold ${trade.profit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {trade.profit >= 0 ? "+" : ""}{formatCurrency(trade.profit)}
+                            </span>
+                            {isSell && sellInfo && sellInfo.closedBuyRows.length > 0 && (
+                              <span className="mt-0.5 text-[11px] font-medium text-indigo-700">
+                                Closes {sellInfo.closedBuyRows.map((n) => `#${n}`).join(", ")}
+                                {sellInfo.avgEntryPrice > 0 && ` · avg entry $${sellInfo.avgEntryPrice.toFixed(4)}`}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="px-6 py-3 text-gray-600 text-xs">{trade.signal}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
