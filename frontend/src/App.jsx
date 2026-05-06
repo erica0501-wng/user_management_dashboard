@@ -10,7 +10,6 @@ import Polymarket from "./pages/Polymarket"
 import PolymarketArchive from "./pages/PolymarketArchive"
 import BacktestDashboard from "./pages/BacktestDashboard"
 import BacktestDetails from "./pages/BacktestDetails"
-import BacktestPnlBreakdown from "./pages/BacktestPnlBreakdown"
 import PolymarketTrade from "./pages/PolymarketTrade"
 import MarketDetails from "./pages/MarketDetails"
 import SettingsPage from "./pages/SettingsPage"
@@ -75,11 +74,6 @@ export default function App() {
         <Route
           path="/polymarket/backtest/:backtestId"
           element={isLoggedIn ? <BacktestDetails /> : <Navigate to="/login" />}
-        />
-
-        <Route
-          path="/polymarket/backtest/:backtestId/pnl-by-market"
-          element={isLoggedIn ? <BacktestPnlBreakdown /> : <Navigate to="/login" />}
         />
 
         <Route

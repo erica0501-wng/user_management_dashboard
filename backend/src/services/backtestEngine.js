@@ -263,10 +263,13 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
 
     const normalizedMarketId = String(options?.marketId || '').trim();
 
+    // 1 backtest = 1 market. marketId is now REQUIRED.
+    if (!normalizedMarketId) {
+      throw new Error('marketId is required: each backtest must target a single Polymarket market.');
+    }
+
     // Merge default params with provided params and persist marketId for later result enrichment.
-    const finalParams = normalizedMarketId
-      ? { ...strategy.defaultParams, ...params, marketId: normalizedMarketId }
-      : { ...strategy.defaultParams, ...params };
+    const finalParams = { ...strategy.defaultParams, ...params, marketId: normalizedMarketId };
 
     // Fetch backtest data
     const { snapshots, marketCount, snapshotCount } = await require('./marketGrouping')
@@ -542,10 +545,20 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
       }
     };
 
+    // Resolve market question for storage + Discord notification (1 market per backtest).
+    const liveMarket = await fetchMarketMetadata(normalizedMarketId).catch(() => null);
+    const resolvedMarketQuestion =
+      liveMarket?.question ||
+      liveMarket?.title ||
+      snapshots.find((s) => String(s.marketId) === normalizedMarketId)?.question ||
+      null;
+
     // Save to database
     const savedBacktest = await prisma.backtest.create({
       data: {
         group: { connect: { name: groupName } },
+        marketId: normalizedMarketId,
+        marketQuestion: resolvedMarketQuestion,
         strategyName,
         startTime: snapshots[0].intervalStart,
         endTime: snapshots[snapshots.length - 1].intervalStart,
@@ -578,24 +591,13 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
     // Await Discord notification — on Vercel serverless, fire-and-forget
     // promises are killed when the lambda response is returned. Awaiting
     // ensures the webhook actually fires before the function exits.
-    const notificationMarketId = String(finalParams?.marketId || '').trim();
-    let notificationMarketQuestion = null;
-    if (notificationMarketId) {
-      const liveMarket = await fetchMarketMetadata(notificationMarketId).catch(() => null);
-      notificationMarketQuestion =
-        liveMarket?.question ||
-        liveMarket?.title ||
-        snapshots.find((s) => String(s.marketId) === notificationMarketId)?.question ||
-        null;
-    }
-
     try {
       await discord.notifyBacktestCompleted({
         groupName,
         strategyName,
         backtest: savedBacktest,
-        marketId: notificationMarketId || null,
-        marketQuestion: notificationMarketQuestion,
+        marketId: normalizedMarketId,
+        marketQuestion: resolvedMarketQuestion,
       })
     } catch (err) {
       console.error('[discord] notifyBacktestCompleted failed:', err?.message || err)
@@ -1062,13 +1064,20 @@ async function planAutoBacktestCombos(options = {}) {
 
   const combos = []
   let strategyIdx = 0
+  // Per-market mode: each combo targets exactly one (group, strategy, marketId).
+  // We rotate strategies across groups and pick a random market from each group
+  // so the daily ~10 notifications cover varied markets instead of always hitting
+  // the same one.
   while (combos.length < maxRuns) {
     let addedThisCycle = 0
     for (const group of eligibleGroups) {
       if (combos.length >= maxRuns) break
+      const marketIds = Array.isArray(group.markets) ? group.markets.filter(Boolean) : []
+      if (marketIds.length === 0) continue
       const strategy = requestedStrategies[strategyIdx % requestedStrategies.length]
       strategyIdx += 1
-      combos.push({ groupName: group.name, strategyName: strategy })
+      const marketId = marketIds[Math.floor(Math.random() * marketIds.length)]
+      combos.push({ groupName: group.name, strategyName: strategy, marketId })
       addedThisCycle += 1
     }
     if (addedThisCycle === 0) break
@@ -1122,11 +1131,17 @@ async function runDailyAutoBacktests(options = {}) {
 
   for (const combo of combos) {
     try {
-      const runResult = await runBacktest(combo.groupName, combo.strategyName, {}, {})
+      const runResult = await runBacktest(
+        combo.groupName,
+        combo.strategyName,
+        {},
+        { marketId: combo.marketId }
+      )
       succeeded += 1
       results.push({
         groupName: combo.groupName,
         strategyName: combo.strategyName,
+        marketId: combo.marketId,
         backtestId: runResult?.backtestId || null,
         status: 'ok',
       })
@@ -1143,11 +1158,12 @@ async function runDailyAutoBacktests(options = {}) {
       }
 
       console.warn(
-        `[auto-backtest] ${combo.groupName} / ${combo.strategyName} ${isSoftSkip ? 'skipped' : 'failed'}: ${message}`
+        `[auto-backtest] ${combo.groupName} / ${combo.strategyName} / ${combo.marketId || '?'} ${isSoftSkip ? 'skipped' : 'failed'}: ${message}`
       )
       results.push({
         groupName: combo.groupName,
         strategyName: combo.strategyName,
+        marketId: combo.marketId,
         backtestId: null,
         status: isSoftSkip ? 'skipped' : 'failed',
         error: message,

@@ -4359,12 +4359,17 @@ async function handleAutoBacktestRun(req, res) {
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader },
-          body: JSON.stringify({ groupName: combo.groupName, strategyName: combo.strategyName }),
+          body: JSON.stringify({
+            groupName: combo.groupName,
+            strategyName: combo.strategyName,
+            marketId: combo.marketId,
+          }),
         })
         const body = await response.json().catch(() => ({}))
         return {
           groupName: combo.groupName,
           strategyName: combo.strategyName,
+          marketId: combo.marketId,
           httpStatus: response.status,
           ok: response.ok && body?.success !== false,
           body,
@@ -4377,6 +4382,7 @@ async function handleAutoBacktestRun(req, res) {
       return {
         groupName: combos[idx].groupName,
         strategyName: combos[idx].strategyName,
+        marketId: combos[idx].marketId,
         httpStatus: 0,
         ok: false,
         error: String(settled.reason?.message || settled.reason),
@@ -4415,18 +4421,23 @@ async function handleAutoBacktestRunSingle(req, res) {
 
     const groupName = String(req.body?.groupName || req.query.groupName || "").trim()
     const strategyName = String(req.body?.strategyName || req.query.strategyName || "momentum").trim()
+    const marketId = String(req.body?.marketId || req.query.marketId || "").trim()
 
     if (!groupName) {
       return res.status(400).json({ success: false, error: "groupName is required" })
     }
+    if (!marketId) {
+      return res.status(400).json({ success: false, error: "marketId is required (1 backtest = 1 market)" })
+    }
 
     const backtestEngine = require("../services/backtestEngine")
     try {
-      const result = await backtestEngine.runBacktest(groupName, strategyName, {}, {})
+      const result = await backtestEngine.runBacktest(groupName, strategyName, {}, { marketId })
       return res.json({
         success: true,
         groupName,
         strategyName,
+        marketId,
         backtestId: result?.backtestId || null,
       })
     } catch (err) {
@@ -4434,12 +4445,13 @@ async function handleAutoBacktestRunSingle(req, res) {
       const isSoftSkip =
         message.includes("Insufficient data for backtest") ||
         message.includes("not found or has no markets")
-      console.warn(`[auto-backtest:single] ${groupName} / ${strategyName} ${isSoftSkip ? "skipped" : "failed"}: ${message}`)
+      console.warn(`[auto-backtest:single] ${groupName} / ${strategyName} / ${marketId} ${isSoftSkip ? "skipped" : "failed"}: ${message}`)
       return res.status(isSoftSkip ? 200 : 500).json({
         success: !isSoftSkip ? false : true,
         skipped: isSoftSkip,
         groupName,
         strategyName,
+        marketId,
         error: message,
       })
     }
@@ -5032,9 +5044,13 @@ router.post("/backtest/run", authenticate, async (req, res) => {
     }
 
     const normalizedMarketId = String(marketId || options?.marketId || "").trim()
-    const effectiveOptions = normalizedMarketId
-      ? { ...options, marketId: normalizedMarketId }
-      : options
+    if (!normalizedMarketId) {
+      return res.status(400).json({
+        success: false,
+        error: "marketId is required: each backtest must target a single Polymarket market."
+      })
+    }
+    const effectiveOptions = { ...options, marketId: normalizedMarketId }
 
     const backtestEngine = require("../services/backtestEngine")
     const results = await backtestEngine.runBacktest(groupName, strategyName, params, effectiveOptions)

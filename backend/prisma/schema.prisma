@@ -348,6 +348,8 @@ model Backtest {
   id              Int      @id @default(autoincrement())
   groupId         Int
   group           MarketGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  marketId        String?  // Polymarket market id this backtest was run against (1 backtest = 1 market). Nullable for legacy rows only.
+  marketQuestion  String?  // Snapshot of the market question at backtest time, for display in dashboards.
   strategyName    String   // e.g., "momentum_strategy", "mean_reversion"
   startTime       DateTime
   endTime         DateTime
@@ -363,7 +365,8 @@ model Backtest {
   params          Json     // Strategy parameters used
   tradeHistory    Json?    // Detailed trade log
   createdAt       DateTime @default(now())
-  
+
   @@index([groupId])
+  @@index([marketId])
   @@index([createdAt])
 }

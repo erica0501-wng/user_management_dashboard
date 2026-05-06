@@ -165,36 +165,6 @@ export default function BacktestDetails() {
   const { backtest, trades, summary } = report
   const markets = Array.isArray(report.markets) ? report.markets : []
 
-  // Aggregate realized P/L per market across the entire backtest (all markets, not just selected one).
-  // Uses SELL trades' `profit` field which already represents realized P/L for that market's full position.
-  const marketPnlBreakdown = (() => {
-    const all = Array.isArray(trades) ? trades : []
-    const byMarket = new Map() // marketId -> { profit, sellCount, buyCount }
-    all.forEach((trade) => {
-      const id = String(trade.marketId || '')
-      if (!id) return
-      const entry = byMarket.get(id) || { profit: 0, sellCount: 0, buyCount: 0 }
-      if (trade.action === "BUY") entry.buyCount += 1
-      if (trade.action === "SELL") {
-        entry.sellCount += 1
-        if (typeof trade.profit === "number" && Number.isFinite(trade.profit)) {
-          entry.profit += trade.profit
-        }
-      }
-      byMarket.set(id, entry)
-    })
-    const rows = Array.from(byMarket.entries()).map(([marketId, info]) => {
-      const market = markets.find((m) => String(m.marketId) === marketId)
-      const displayName = market
-        ? getPolymarketMarketMeta(market, `Market ${marketId}`).displayName
-        : `Market ${marketId}`
-      return { marketId, displayName, ...info }
-    })
-    rows.sort((a, b) => b.profit - a.profit)
-    const totalProfit = rows.reduce((sum, r) => sum + r.profit, 0)
-    return { rows, totalProfit }
-  })()
-
   // Aggregate gross gains vs gross losses across every SELL trade so the summary panels
   // can show *where* the net P/L is coming from (winners vs losers, biggest contributors).
   const pnlAttribution = (() => {
@@ -512,29 +482,6 @@ export default function BacktestDetails() {
               </div>
             </div>
           </div>
-
-          {/* Profit/Loss Breakdown by Market — moved to its own page */}
-          {marketPnlBreakdown.rows.length > 0 && (
-            <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Profit/Loss Breakdown by Market</h2>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {marketPnlBreakdown.rows.length} market{marketPnlBreakdown.rows.length === 1 ? "" : "s"} · Total realized:{" "}
-                    <span className={`font-semibold ${marketPnlBreakdown.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                      {marketPnlBreakdown.totalProfit >= 0 ? "+" : ""}{formatCurrency(marketPnlBreakdown.totalProfit)}
-                    </span>
-                  </p>
-                </div>
-                <button
-                  onClick={() => navigate(`/polymarket/backtest/${backtestId}/pnl-by-market`)}
-                  className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  View full breakdown →
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Trade History Table */}
           <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
