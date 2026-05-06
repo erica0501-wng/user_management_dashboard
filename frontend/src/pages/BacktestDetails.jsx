@@ -513,53 +513,25 @@ export default function BacktestDetails() {
             </div>
           </div>
 
-          {/* Profit/Loss Breakdown by Market */}
+          {/* Profit/Loss Breakdown by Market — moved to its own page */}
           {marketPnlBreakdown.rows.length > 0 && (
             <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
-              <div className="mb-4 flex items-baseline justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Profit/Loss Breakdown by Market</h2>
-                <span className="text-sm text-gray-500">
-                  Total realized:{" "}
-                  <span className={`font-semibold ${marketPnlBreakdown.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                    {marketPnlBreakdown.totalProfit >= 0 ? "+" : ""}{formatCurrency(marketPnlBreakdown.totalProfit)}
-                  </span>
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left font-semibold text-gray-900">Market</th>
-                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Buys</th>
-                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Sells</th>
-                      <th className="px-6 py-3 text-right font-semibold text-gray-900">Realized P/L</th>
-                      <th className="px-6 py-3 text-right font-semibold text-gray-900">% of Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {marketPnlBreakdown.rows.map((row) => {
-                      const share = marketPnlBreakdown.totalProfit !== 0
-                        ? (row.profit / marketPnlBreakdown.totalProfit) * 100
-                        : 0
-                      return (
-                        <tr key={row.marketId} className="hover:bg-gray-50">
-                          <td className="px-6 py-3">
-                            <div className="font-medium text-gray-900">{row.displayName}</div>
-                            <div className="text-xs text-gray-500">ID {row.marketId}</div>
-                          </td>
-                          <td className="px-6 py-3 text-right text-gray-700">{row.buyCount}</td>
-                          <td className="px-6 py-3 text-right text-gray-700">{row.sellCount}</td>
-                          <td className={`px-6 py-3 text-right font-semibold ${row.profit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                            {row.profit >= 0 ? "+" : ""}{formatCurrency(row.profit)}
-                          </td>
-                          <td className={`px-6 py-3 text-right text-xs font-medium ${row.profit >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                            {share >= 0 ? "+" : ""}{share.toFixed(1)}%
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Profit/Loss Breakdown by Market</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {marketPnlBreakdown.rows.length} market{marketPnlBreakdown.rows.length === 1 ? "" : "s"} · Total realized:{" "}
+                    <span className={`font-semibold ${marketPnlBreakdown.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {marketPnlBreakdown.totalProfit >= 0 ? "+" : ""}{formatCurrency(marketPnlBreakdown.totalProfit)}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate(`/polymarket/backtest/${backtestId}/pnl-by-market`)}
+                  className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  View full breakdown →
+                </button>
               </div>
             </div>
           )}
