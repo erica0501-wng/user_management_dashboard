@@ -486,7 +486,7 @@ This is an automated notification from your Auto-Trader System.
       description: activity.description || "A new account activity was detected.",
       details: activity.details || {},
       actionLabel: activity.actionLabel || "Open Dashboard",
-      actionUrl: activity.actionUrl || "http://localhost:5173",
+      actionUrl: activity.actionUrl || "https://stocks.quadrawebs.com",
       color: activity.color || 0x2563EB
     }
   }

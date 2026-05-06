@@ -5,7 +5,7 @@ const authenticate = require("../middleware/auth")
 const notificationService = require("../services/notificationService")
 const polymarketDataArchiver = require("../services/polymarketDataArchiver")
 
-const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+const dashboardBaseUrl = process.env.FRONTEND_URL || "https://stocks.quadrawebs.com"
 const CALENDAR_BACKTEST_MATCH_WINDOW_DAYS = 120
 const CALENDAR_EVENTS_CACHE_TTL_MS = parsePositiveInt(process.env.CALENDAR_EVENTS_CACHE_TTL_MS, 5 * 60 * 1000)
 const calendarEventsCache = new Map()

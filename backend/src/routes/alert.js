@@ -5,7 +5,7 @@ const authenticate = require("../middleware/auth")
 const notificationService = require("../services/notificationService")
 
 const prisma = new PrismaClient()
-const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+const dashboardBaseUrl = process.env.FRONTEND_URL || "https://stocks.quadrawebs.com"
 
 function isDatabaseUnavailableError(error) {
   const message = String(error?.message || "").toLowerCase()

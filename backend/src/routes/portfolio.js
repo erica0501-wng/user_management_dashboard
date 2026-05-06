@@ -4,7 +4,7 @@ const prisma = require('../prisma')
 const authenticateToken = require('../middleware/auth')
 const notificationService = require('../services/notificationService')
 
-const dashboardBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+const dashboardBaseUrl = process.env.FRONTEND_URL || 'https://stocks.quadrawebs.com'
 
 function getAuthenticatedUserId(req) {
   const userId = Number(req.user?.id)

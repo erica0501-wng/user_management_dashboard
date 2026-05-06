@@ -5,7 +5,7 @@ const notificationService = require("../services/notificationService")
 
 const router = express.Router()
 const prisma = new PrismaClient()
-const dashboardBaseUrl = process.env.FRONTEND_URL || "http://localhost:5173"
+const dashboardBaseUrl = process.env.FRONTEND_URL || "https://stocks.quadrawebs.com"
 
 async function sendAutoTraderSetupNotification(userId, activity, channels = null) {
   try {
