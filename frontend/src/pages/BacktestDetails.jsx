@@ -258,7 +258,12 @@ export default function BacktestDetails() {
               ← Back to Results
             </button>
             <h1 className="text-3xl font-bold text-gray-900">{backtest.strategyName} Strategy</h1>
-            <p className="mt-1 text-gray-600">{backtest.groupName} Group • {backtest.totalTrades} trades</p>
+            <p className="mt-1 text-gray-600">
+              {backtest.marketQuestion
+                ? backtest.marketQuestion
+                : `${backtest.groupName} Group`}
+              {" • "}{backtest.totalTrades} trades
+            </p>
           </div>
 
           {/* Performance Metrics */}
@@ -350,35 +355,37 @@ export default function BacktestDetails() {
                 </div>
               </div>
 
-              <div className="border-t border-white/10 bg-white/5 p-4">
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-white/60">Market focus</div>
-                    <div className="mt-1 text-sm text-white/80">
-                      Choose a market to inspect its price action and trade markers.
+              {markets.length > 1 && (
+                <div className="border-t border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-wrap items-end justify-between gap-4">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-white/60">Market focus</div>
+                      <div className="mt-1 text-sm text-white/80">
+                        Choose a market to inspect its price action and trade markers.
+                      </div>
+                    </div>
+
+                    <div className="min-w-[280px] flex-1 max-w-md space-y-3">
+                      <label className="block">
+                        <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-white/60">
+                          Selected market
+                        </span>
+                        <select
+                          value={selectedMarketId}
+                          onChange={(event) => setSelectedMarketId(event.target.value)}
+                          className="w-full rounded-xl border border-white/15 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
+                        >
+                          {markets.map((market) => (
+                            <option key={market.marketId} value={String(market.marketId)}>
+                              {getPolymarketMarketMeta(market, `Market ${market.marketId}`).displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                   </div>
-
-                  <div className="min-w-[280px] flex-1 max-w-md space-y-3">
-                    <label className="block">
-                      <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-white/60">
-                        Selected market
-                      </span>
-                      <select
-                        value={selectedMarketId}
-                        onChange={(event) => setSelectedMarketId(event.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
-                      >
-                        {markets.map((market) => (
-                          <option key={market.marketId} value={String(market.marketId)}>
-                            {getPolymarketMarketMeta(market, `Market ${market.marketId}`).displayName}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Market Price & Trade Markers</h2>

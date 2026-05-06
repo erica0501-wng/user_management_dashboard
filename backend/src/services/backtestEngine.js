@@ -990,6 +990,8 @@ async function getBacktestReport(backtestId) {
       createdAt: backtest.createdAt,
       strategyName: backtest.strategyName,
       groupName: backtest.group?.name || null,
+      marketId: backtest.marketId || null,
+      marketQuestion: backtest.marketQuestion || null,
       startTime: backtest.startTime,
       endTime: backtest.endTime,
       initialCapital: backtest.initialCapital,
