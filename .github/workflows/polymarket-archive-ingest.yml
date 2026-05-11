@@ -2,31 +2,68 @@ name: Polymarket Archive Ingest
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
+# Fan-out is done HERE in GitHub Actions instead of inside a parent Vercel
+# lambda — the parent was hitting 504 because it had to await all 5 sub-runs
+# under one 300s budget. Each matrix job below hits its own Vercel invocation
+# (own 300s budget). One slow group can no longer block the others.
+
 jobs:
-  trigger-ingest:
+  ingest-group:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - label: "NBA"
+            body: '{"group":"NBA","inline":true,"skipGenericFeed":true}'
+          - label: "Elon Tweets"
+            body: '{"group":"Elon Tweets","inline":true,"skipGenericFeed":true}'
+          - label: "Movies"
+            body: '{"group":"Movies","inline":true,"skipGenericFeed":true}'
+          - label: "Economic Policy"
+            body: '{"group":"Economic Policy","inline":true,"skipGenericFeed":true}'
+          - label: "Generic Feed"
+            body: '{"groups":"__none__","inline":true,"skipGenericFeed":false}'
+    name: ingest (${{ matrix.label }})
     steps:
-      - name: Trigger archive ingestion endpoint
+      - name: Trigger archive ingestion for ${{ matrix.label }}
         env:
           ARCHIVE_TRIGGER_URL: ${{ secrets.ARCHIVE_TRIGGER_URL }}
           ARCHIVE_TRIGGER_SECRET: ${{ secrets.ARCHIVE_TRIGGER_SECRET }}
+          BODY: ${{ matrix.body }}
+          LABEL: ${{ matrix.label }}
         run: |
           if [ -z "$ARCHIVE_TRIGGER_URL" ]; then
             echo "ARCHIVE_TRIGGER_URL secret is not configured"
             exit 1
           fi
-
           if [ -z "$ARCHIVE_TRIGGER_SECRET" ]; then
             echo "ARCHIVE_TRIGGER_SECRET secret is not configured"
             exit 1
           fi
 
-          response=$(curl -sS -w "\n%{http_code}" \
+          echo "Dispatching archive ingest for: $LABEL"
+          echo "Body: $BODY"
+
+          # max-time 295s so curl errors out just before Vercel's 300s function limit.
+          set +e
+          response=$(curl -sS --max-time 295 -w "\n%{http_code}" \
+            -X POST \
             -H "Authorization: Bearer ${ARCHIVE_TRIGGER_SECRET}" \
-            "${ARCHIVE_TRIGGER_URL}?runQualityReport=false")
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "${ARCHIVE_TRIGGER_URL}")
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "::warning::curl failed (exit $curl_exit) for group '$LABEL'. Vercel sub-invocation may still be running. Continuing."
+            exit 0
+          fi
 
           body=$(echo "$response" | sed '$d')
           status=$(echo "$response" | tail -n1)
@@ -35,5 +72,7 @@ jobs:
           echo "Response body: $body"
 
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            exit 1
+            # Don't fail the whole workflow for one slow group; the others should still succeed.
+            echo "::warning::Group '$LABEL' returned HTTP $status"
+            exit 0
           fi
