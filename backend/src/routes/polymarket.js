@@ -4124,57 +4124,53 @@ async function handleArchiveIngestRun(req, res) {
         { label: "generic-feed", body: { inline: true, skipGenericFeed: false, groups: "__none__" } }
       ]
 
-      console.log(`[archive-ingest] Fan-out: dispatching ${tasks.length} parallel sub-invocations`)
+      console.log(`[archive-ingest] Fan-out: dispatching ${tasks.length} parallel sub-invocations (fire-and-forget)`)
 
-      const dispatched = await Promise.allSettled(
-        tasks.map(async (task) => {
-          const response = await fetch(`${baseUrl}/polymarket/archive/ingest/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeader },
-            body: JSON.stringify(task.body)
-          })
-          const body = await response.json().catch(() => ({}))
-          return {
-            label: task.label,
-            httpStatus: response.status,
-            ok: response.ok && body?.success !== false,
-            archivedMarkets: body?.run?.archivedMarkets,
-            archivedOrderBooks: body?.run?.archivedOrderBooks
-          }
+      // Fire-and-forget: each sub-invocation is its own independent Vercel
+      // lambda with its own 300s budget, so the parent doesn't need to wait
+      // for them to complete. Awaiting them would just cause the parent to
+      // 504 whenever any sub-call is slow (Vercel kills the parent at 300s).
+      // We attach a short timeout so the parent doesn't hang on the TCP
+      // handshake either, and swallow errors since we'll never see them.
+      const dispatchTimeoutMs = 15_000
+      tasks.forEach((task) => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), dispatchTimeoutMs)
+        fetch(`${baseUrl}/polymarket/archive/ingest/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader },
+          body: JSON.stringify(task.body),
+          signal: controller.signal
         })
-      )
-
-      const results = dispatched.map((s, i) =>
-        s.status === "fulfilled"
-          ? s.value
-          : { label: tasks[i].label, ok: false, error: String(s.reason?.message || s.reason) }
-      )
-      const succeeded = results.filter((r) => r.ok).length
+          .catch((err) => {
+            // AbortError is expected once the request is in flight on Vercel —
+            // the sub-invocation continues running independently.
+            if (err?.name !== "AbortError") {
+              console.error(`[archive-ingest] dispatch ${task.label} error:`, err.message)
+            }
+          })
+          .finally(() => clearTimeout(timer))
+      })
 
       clearArchiveCache()
 
-      // Refresh MarketGroup.markets so newly archived market IDs become visible to
-      // backtests. Without this, group.markets stays frozen at whatever it was the
-      // last time someone manually called /market-groups/categorize, and backtests
-      // see "no fresh data" even though snapshots are landing.
-      let categorizationOk = false
-      try {
-        const marketGrouping = require("../services/marketGrouping")
-        await marketGrouping.categorizeAllMarkets()
-        categorizationOk = true
-      } catch (catError) {
-        console.error("[archive-ingest] categorizeAllMarkets failed (non-fatal):", catError.message)
-      }
+      // Refresh MarketGroup.markets in the background too — it touches the DB
+      // and we don't want to block the cron response on it.
+      ;(async () => {
+        try {
+          const marketGrouping = require("../services/marketGrouping")
+          await marketGrouping.categorizeAllMarkets()
+        } catch (catError) {
+          console.error("[archive-ingest] categorizeAllMarkets failed (non-fatal):", catError.message)
+        }
+      })()
 
       return res.json({
         success: true,
         mode: "fan-out",
-        message: `Dispatched ${tasks.length} archive sub-invocations: ${succeeded} ok / ${tasks.length - succeeded} failed`,
-        attempted: tasks.length,
-        succeeded,
-        failed: tasks.length - succeeded,
-        categorizationOk,
-        results
+        message: `Dispatched ${tasks.length} archive sub-invocations (fire-and-forget). Each runs in its own Vercel lambda; check sub-invocation logs / Discord for per-group results.`,
+        dispatched: tasks.length,
+        tasks: tasks.map((t) => t.label)
       })
     }
 
