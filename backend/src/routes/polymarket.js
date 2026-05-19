@@ -42,6 +42,28 @@ const DEMO_BACKTEST_GROUPS = [
 ]
 
 const DEMO_BACKTEST_RESULTS = [
+    {
+      id: 810099,
+      groupName: "Politics",
+      strategyName: "momentum",
+      marketId: "556108",
+      marketQuestion: "Will MegaETH perform an airdrop by June 30?",
+      marketCategory: "Politics",
+      startTime: "2026-01-15T00:00:00.000Z",
+      endTime: "2026-02-01T00:00:00.000Z",
+      initialCapital: 10000,
+      finalValue: 11379.48,
+      pnl: 1379.48,
+      roi: 13.79,
+      winRate: 27.27,
+      totalTrades: 22,
+      winningTrades: 6,
+      losingTrades: 16,
+      maxDrawdown: 6.24,
+      params: { buyThreshold: 0.02, sellThreshold: 0.02, positionSize: 1000 },
+      createdAt: "2026-02-01T08:05:00.000Z",
+      group: { name: "Politics" }
+    },
   {
     id: 810011,
     groupName: "Sports",
@@ -147,30 +169,53 @@ function buildDemoTrades(totalTrades, marketId, marketQuestion) {
   const trades = []
   const baseTime = new Date("2026-01-10T00:00:00.000Z").getTime()
 
-  for (let index = 0; index < totalTrades; index += 1) {
-    const isBuy = index % 2 === 0
-    const price = Number((0.42 + (index % 5) * 0.03).toFixed(4))
-    const amount = 1000
-    const profit = isBuy ? null : Number((index % 4 === 0 ? -28.5 : 61.2).toFixed(2))
-
+  for (let index = 0; index < totalTrades; index += 2) {
+    // 每一对 BUY/SELL 共享同一个 transactionId
+    const txId = `${marketId}_DEMO_${index / 2}`;
+    // BUY
+    const priceBuy = Number((0.42 + ((index) % 5) * 0.03).toFixed(4));
+    const amountBuy = 1000;
     trades.push({
       index: index + 1,
       time: new Date(baseTime + index * 6 * 60 * 60 * 1000).toISOString(),
-      action: isBuy ? "BUY" : "SELL",
+      action: "BUY",
       marketId,
       marketQuestion,
       marketCategory: "crypto",
-      price,
-      amount,
-      shares: Number((amount / price).toFixed(2)),
-      profit,
-      signal: isBuy ? "Lower percentile entry" : "Upper percentile exit",
-      cashBalance: Number((10000 + (profit || 0)).toFixed(2)),
-      positionShares: isBuy ? Number((amount / price).toFixed(2)) : 0
-    })
+      price: priceBuy,
+      amount: amountBuy,
+      shares: Number((amountBuy / priceBuy).toFixed(2)),
+      profit: null,
+      signal: "Lower percentile entry",
+      cashBalance: 10000,
+      positionShares: Number((amountBuy / priceBuy).toFixed(2)),
+      transactionId: txId
+    });
+    // SELL
+    if (index + 1 < totalTrades) {
+      const priceSell = Number((0.42 + ((index + 1) % 5) * 0.03).toFixed(4));
+      const amountSell = 1000;
+      const profit = (index + 1) % 4 === 0 ? -28.5 : 61.2;
+      trades.push({
+        index: index + 2,
+        time: new Date(baseTime + (index + 1) * 6 * 60 * 60 * 1000).toISOString(),
+        action: "SELL",
+        marketId,
+        marketQuestion,
+        marketCategory: "crypto",
+        price: priceSell,
+        amount: amountSell,
+        shares: Number((amountSell / priceSell).toFixed(2)),
+        profit: profit,
+        signal: "Upper percentile exit",
+        cashBalance: Number((10000 + profit).toFixed(2)),
+        positionShares: 0,
+        transactionId: txId
+      });
+    }
   }
 
-  return trades
+  return trades;
 }
 
 function buildDemoMarketCard(marketId, question, category) {
@@ -193,18 +238,18 @@ function getDemoBacktestReport(backtestId) {
     return null
   }
 
-  const marketId = selected.groupName === "Crypto" ? "640001" : "550694"
-  const marketQuestion =
-    selected.groupName === "Crypto"
-      ? "Will MegaETH perform an airdrop by June 30?"
-      : "Will Italy qualify for FIFA World Cup 2026?"
-  const marketCategory = selected.groupName.toLowerCase()
+  // 用 selected.marketId 和 marketQuestion，确保和页面展示一致
+  const marketId = selected.marketId;
+  const marketQuestion = selected.marketQuestion;
+  const marketCategory = selected.groupName.toLowerCase();
 
-  const trades = buildDemoTrades(selected.totalTrades, marketId, marketQuestion)
-  const buyCount = trades.filter((trade) => trade.action === "BUY").length
-  const sellCount = trades.filter((trade) => trade.action === "SELL").length
-  const winningSellCount = trades.filter((trade) => trade.action === "SELL" && Number(trade.profit || 0) > 0).length
-  const losingSellCount = trades.filter((trade) => trade.action === "SELL" && Number(trade.profit || 0) <= 0).length
+  const trades = buildDemoTrades(selected.totalTrades, marketId, marketQuestion);
+  const buyCount = trades.filter((trade) => trade.action === "BUY").length;
+  const sellCount = trades.filter((trade) => trade.action === "SELL").length;
+  const winningSellCount = trades.filter((trade) => trade.action === "SELL" && Number(trade.profit || 0) > 0).length;
+  const losingSellCount = trades.filter((trade) => trade.action === "SELL" && Number(trade.profit || 0) <= 0).length;
+  // 统计唯一 transactionId 数量作为 pairedTrades
+  const pairedTrades = Array.from(new Set(trades.map(t => t.transactionId))).filter(Boolean).length;
 
   return {
     backtest: {
@@ -231,7 +276,8 @@ function getDemoBacktestReport(backtestId) {
       sellCount,
       winningSellCount,
       losingSellCount,
-      uniqueMarkets: 1
+      uniqueMarkets: 1,
+      pairedTrades
     },
     markets: [
       {
@@ -240,7 +286,7 @@ function getDemoBacktestReport(backtestId) {
       }
     ],
     trades
-  }
+  };
 }
 
 function createUnavailableBacktestReport(backtestId) {

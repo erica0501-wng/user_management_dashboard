@@ -2,7 +2,7 @@ name: Polymarket Archive Ingest
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 */2 * * *"
   workflow_dispatch:
 
 # Fan-out is done HERE in GitHub Actions instead of inside a parent Vercel

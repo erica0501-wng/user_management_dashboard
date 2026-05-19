@@ -681,3 +681,6 @@ export default function BacktestDetails() {
     </div>
   )
 }
+
+
+//ok

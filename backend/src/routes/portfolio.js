@@ -239,7 +239,25 @@ router.get('/orders', authenticateToken, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     })
 
-    res.json(orders)
+    // 统计 Buy、Sell 总额
+    let buyTotal = 0
+    let sellTotal = 0
+    orders.forEach(order => {
+      const amount = Number(order.price) * Number(order.quantity)
+      if (order.direction === 'Buy') {
+        buyTotal += amount
+      } else if (order.direction === 'Sell') {
+        sellTotal += amount
+      }
+    })
+    const total = buyTotal + sellTotal
+
+    res.json({
+      buyTotal,
+      sellTotal,
+      total,
+      orders
+    })
   } catch (error) {
     console.error('Get orders error:', error)
     res.status(500).json({ error: 'Failed to get orders' })

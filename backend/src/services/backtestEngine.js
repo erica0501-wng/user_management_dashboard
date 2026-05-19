@@ -343,6 +343,7 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
     const lastSnapshotByMarket = new Map();
 
     // Run strategy on each snapshot
+    let tradeSeq = 0;
     for (let i = 0; i < snapshots.length; i++) {
       const current = snapshots[i];
       const prevSameMarket = lastSnapshotByMarket.get(current.marketId) || null;
@@ -363,6 +364,9 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
         shares: 0,
         costBasis: 0
       };
+
+      // Helper to generate fallback transactionId
+      const makeTxId = (tradeType) => `${current.marketId || 'M'}_${tradeType}_${tradeSeq++}`;
 
       if (
         signal.action === 'BUY' &&
@@ -395,7 +399,8 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
           signal: signal.signal || 'Buy signal triggered',
           cashBalance,
           positionShares: nextPosition.shares,
-          positionCostBasis: nextPosition.costBasis
+          positionCostBasis: nextPosition.costBasis,
+          transactionId: makeTxId('BUY')
         });
       } else if (signal.action === 'SELL' && signalPrice > 0 && existingPosition.shares > 0) {
         const sharesToSell = existingPosition.shares;
@@ -416,7 +421,8 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
           signal: signal.signal || 'Sell signal triggered',
           cashBalance,
           positionShares: 0,
-          positionCostBasis: 0
+          positionCostBasis: 0,
+          transactionId: makeTxId('SELL')
         });
 
         positionsByMarket.delete(current.marketId);
@@ -480,7 +486,8 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
         signal: 'Auto-close at end of backtest window',
         cashBalance,
         positionShares: 0,
-        positionCostBasis: 0
+        positionCostBasis: 0,
+        transactionId: `${marketId}_AUTOSELL_${tradeSeq++}`
       });
 
       positionsByMarket.delete(marketId);
@@ -867,7 +874,26 @@ async function getBacktestReport(backtestId) {
     return null;
   }
 
-  const tradeHistory = normalizeTradeHistory(backtest.tradeHistory);
+  let tradeHistory = normalizeTradeHistory(backtest.tradeHistory);
+  // Ensure all trades have transactionId,和兜底分配
+  let missingTxIdCount = 0;
+    tradeHistory = tradeHistory.map((trade, idx) => {
+      if (!trade.transactionId || typeof trade.transactionId !== 'string' || !trade.transactionId.trim()) {
+        missingTxIdCount++;
+        // 兜底分配唯一 transactionId
+        return { ...trade, transactionId: `${trade.marketId || 'M'}_AUTO_${Date.now()}_${idx}` };
+      }
+      return trade;
+    });
+  // 日志：输出 tradeHistory 长度和部分内容
+  console.log('[DEBUG] tradeHistory.length:', tradeHistory.length);
+  if (tradeHistory.length > 0) {
+    console.log('[DEBUG] tradeHistory[0]:', tradeHistory[0]);
+    console.log('[DEBUG] tradeHistory actions:', tradeHistory.map(t => t.action));
+  }
+  // 日志：输出所有 transactionId
+  const allTxIds = tradeHistory.map(t => t.transactionId);
+  console.log('[DEBUG] all transactionIds:', allTxIds);
   const marketIds = [...new Set(tradeHistory.map((trade) => String(trade?.marketId || '').trim()).filter(Boolean))];
 
   const marketPriceSnapshots = marketIds.length > 0
@@ -934,18 +960,19 @@ async function getBacktestReport(backtestId) {
   const marketPriceSeries = marketPriceSnapshots.reduce((acc, snapshot) => {
     const marketId = String(snapshot?.marketId || '').trim();
     if (!marketId) {
-      return acc;
-    }
-
-    const { yesPrice, noPrice } = getYesNoPrices(snapshot);
-    const fallbackPrice = getPrimaryPrice(snapshot);
-
-    if (!Number.isFinite(fallbackPrice) || fallbackPrice <= 0) {
-      return acc;
-    }
-
-    if (!acc[marketId]) {
-      acc[marketId] = [];
+      return {
+        report: {
+          backtest: {
+            ...backtest,
+            tradeHistory: undefined
+          },
+          trades: tradeHistory,
+          summary,
+          markets,
+          marketPriceSeries,
+          warning: missingTxIdCount > 0 ? `${missingTxIdCount} trades were missing transactionId and have been auto-assigned.` : undefined
+        }
+      };
     }
 
     acc[marketId].push({
@@ -984,6 +1011,32 @@ async function getBacktestReport(backtestId) {
   const winningSellCount = trades.filter((trade) => trade.action === 'SELL' && Number(trade.profit || 0) > 0).length;
   const losingSellCount = trades.filter((trade) => trade.action === 'SELL' && Number(trade.profit || 0) <= 0).length;
 
+  // 调试输出
+  const sellTrades = trades.filter(t => t.action === 'SELL');
+  console.log('SELL count:', sellTrades.length);
+  console.log('SELL trades:', sellTrades);
+  console.log('ALL trades count:', trades.length);
+  // 新增日志：pairedTrades 计算前输出所有 transactionId
+  const allTxIdsForPair = trades.map(t => t.transactionId);
+  console.log('[DEBUG] trades transactionIds for pairedTrades:', allTxIdsForPair);
+  // tradeHistory 为空时 pairedTrades 返回 null
+  let pairedTrades = null;
+  if (trades.length > 0) {
+    pairedTrades = Array.from(new Set(trades.map(t => t.transactionId))).filter(Boolean).length;
+    if (!pairedTrades || isNaN(pairedTrades)) pairedTrades = 0;
+  } else {
+    pairedTrades = 0;
+  }
+  console.log('[DEBUG] pairedTrades:', pairedTrades);
+  const totalTradeActions = trades.length;
+  const totalSellActions = trades.filter(t => t.action === 'SELL').length;
+  const summary = {
+    pairedTrades, // Number of unique transactionId (paired buy/sell)
+    totalTradeActions, // Total number of trade actions (BUY + SELL)
+    totalSellActions, // Total number of SELL actions (often matches totalTrades in summary)
+    note: 'pairedTrades = unique transactionId (paired buy/sell); totalTradeActions = all trades; totalSellActions = SELLs only.'
+  };
+  console.log('SUMMARY:', summary);
   return {
     backtest: {
       id: backtest.id,
@@ -1005,14 +1058,7 @@ async function getBacktestReport(backtestId) {
       winningTrades: backtest.winningTrades,
       losingTrades: backtest.losingTrades
     },
-    summary: {
-      transactionCount: trades.length,
-      buyCount,
-      sellCount,
-      winningSellCount,
-      losingSellCount,
-      uniqueMarkets: marketIds.length
-    },
+    summary,
     markets: marketDetails,
     marketPriceSeries,
     trades
