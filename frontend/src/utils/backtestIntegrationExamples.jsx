@@ -51,27 +51,27 @@ export function BacktestDetailsWithSignals({
     }))
   }, [backtest?.tradeHistory])
 
+  // Show summary from backend if available
+  const summary = backtest?.summary || {};
   return (
     <div className="space-y-6">
-      {/* Existing backtest stats */}
+      {/* Enhanced backtest stats with tally info */}
       <div className="grid grid-cols-4 gap-4">
         <div className="p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-gray-600">ROI</p>
           <p className="text-2xl font-bold text-blue-600">{backtest?.roi}%</p>
         </div>
         <div className="p-4 bg-green-50 rounded-lg">
-          <p className="text-sm text-gray-600">Total Trades</p>
-          <p className="text-2xl font-bold text-green-600">{backtest?.totalTrades}</p>
+          <p className="text-sm text-gray-600">Total Trades (SELLs)</p>
+          <p className="text-2xl font-bold text-green-600">{summary.totalSellActions ?? backtest?.totalTrades}</p>
         </div>
-        <div className="p-4 bg-purple-50 rounded-lg">
-          <p className="text-sm text-gray-600">Win Rate</p>
-          <p className="text-2xl font-bold text-purple-600">{backtest?.winRate.toFixed(1)}%</p>
-        </div>
+        {/* Paired Trades removed as requested */}
         <div className="p-4 bg-orange-50 rounded-lg">
-          <p className="text-sm text-gray-600">Max Drawdown</p>
-          <p className="text-2xl font-bold text-orange-600">-{backtest?.maxDrawdown.toFixed(1)}%</p>
+          <p className="text-sm text-gray-600">Win Rate</p>
+          <p className="text-2xl font-bold text-orange-600">{backtest?.winRate?.toFixed(1)}%</p>
         </div>
       </div>
+      {/* Note removed as requested */}
 
       {/* NEW: Trading Signal Chart */}
       {priceData.length > 0 && trades.length > 0 && (

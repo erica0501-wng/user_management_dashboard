@@ -173,6 +173,20 @@
 
     <div class="section">
       <h2>📋 订单列表 (<span id="orderCount">0</span> 个)</h2>
+      <div class="stats" id="orderTotals">
+        <div class="stat-card">
+          <div class="stat-label">买入总额 (Buy Total)</div>
+          <div class="stat-value" id="buyTotal">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">卖出总额 (Sell Total)</div>
+          <div class="stat-value" id="sellTotal">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">买入+卖出总额 (Total)</div>
+          <div class="stat-value" id="totalBuySell">-</div>
+        </div>
+      </div>
       <div id="ordersTable"></div>
     </div>
 
@@ -188,11 +202,7 @@
   </div>
 
   <script>
-    function loadData() {
-      // Get orders
-      const ordersStr = localStorage.getItem('orders')
-      const orders = ordersStr ? JSON.parse(ordersStr) : []
-
+    async function loadData() {
       // Get account balance
       const balanceStr = localStorage.getItem('accountBalance')
       const balance = balanceStr ? JSON.parse(balanceStr) : { availableCash: 0, totalInvested: 0 }
@@ -204,6 +214,35 @@
       document.getElementById('totalBalance').textContent = `$${totalBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}`
       const buyingPower = balance.availableCash * 2
       document.getElementById('buyingPower').textContent = `$${buyingPower.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+
+      // Fetch orders and totals from backend
+      let buyTotal = 0, sellTotal = 0, total = 0, orders = []
+      try {
+        const token = localStorage.getItem('token')
+        const resp = await fetch('/portfolio/orders', {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        })
+        if (resp.ok) {
+          const data = await resp.json()
+          buyTotal = data.buyTotal || 0
+          sellTotal = data.sellTotal || 0
+          total = data.total || 0
+          orders = data.orders || []
+        } else {
+          // fallback to localStorage if backend fails
+          const ordersStr = localStorage.getItem('orders')
+          orders = ordersStr ? JSON.parse(ordersStr) : []
+        }
+      } catch (e) {
+        // fallback to localStorage if fetch fails
+        const ordersStr = localStorage.getItem('orders')
+        orders = ordersStr ? JSON.parse(ordersStr) : []
+      }
+
+      // Update totals
+      document.getElementById('buyTotal').textContent = `$${buyTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+      document.getElementById('sellTotal').textContent = `$${sellTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}`
+      document.getElementById('totalBuySell').textContent = `$${total.toLocaleString('en-US', {minimumFractionDigits: 2})}`
 
       // Update order count
       document.getElementById('orderCount').textContent = orders.length
@@ -231,7 +270,6 @@
                             order.status === 'Filled' ? 'status-filled' : 'status-cancelled'
           const directionClass = order.direction === 'Buy' ? 'buy' : 'sell'
           const total = (order.price * order.quantity).toFixed(2)
-          
           tableHtml += `
             <tr>
               <td class="${statusClass}">${order.status}</td>
@@ -241,7 +279,7 @@
               <td>$${Number(order.price).toFixed(2)}</td>
               <td>${order.quantity}</td>
               <td>$${Number(total).toLocaleString()}</td>
-              <td style="font-size: 12px;">${order.time}</td>
+              <td style="font-size: 12px;">${order.time || ''}</td>
             </tr>
           `
         })
@@ -309,7 +347,10 @@
       const rawData = {
         accountBalance: balance,
         orders: orders,
-        holdings: holdingsArray
+        holdings: holdingsArray,
+        buyTotal,
+        sellTotal,
+        total
       }
       document.getElementById('rawData').textContent = JSON.stringify(rawData, null, 2)
 
