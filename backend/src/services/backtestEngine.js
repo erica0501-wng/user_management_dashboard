@@ -948,6 +948,14 @@ async function getBacktestReport(backtestId) {
       const question = liveMarket?.question || market.question || null;
       const category = liveMarket?.category || market.category || null;
 
+      // Per-market per-BUY position tally
+      const tradesForMarket = tradeHistory.filter(t => String(t.marketId) === String(market.marketId));
+      const buyTrades = tradesForMarket.filter(t => String(t.action).toUpperCase() === 'BUY');
+      const positionWins = buyTrades.filter(t => t.positionOutcome === 'WIN').length;
+      const positionLosses = buyTrades.filter(t => t.positionOutcome === 'LOSS').length;
+      const positionBreakeven = buyTrades.filter(t => t.positionOutcome === 'BREAKEVEN').length;
+      const positionCount = buyTrades.length;
+
       return {
         marketId: market.marketId,
         title: liveMarket?.title || question,
@@ -958,7 +966,12 @@ async function getBacktestReport(backtestId) {
         outcomes: liveMarket?.outcomes || [],
         outcomePrices: liveMarket?.outcomePrices || [],
         endDate: liveMarket?.endDate || null,
-        intervalStart: market.intervalStart
+        intervalStart: market.intervalStart,
+        // Per-BUY position tally for this market
+        positionCount,
+        positionWins,
+        positionLosses,
+        positionBreakeven
       };
     })
   );
