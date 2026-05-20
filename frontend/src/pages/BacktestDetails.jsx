@@ -315,8 +315,8 @@ export default function BacktestDetails() {
                 {backtest.marketQuestion
                   ? backtest.marketQuestion
                   : `${backtest.groupName} Group`}
-                {" • "}{backtest.totalTrades} closed trade{backtest.totalTrades === 1 ? "" : "s"}
-                {" · "}{summary?.transactionCount ?? 0} transaction{(summary?.transactionCount ?? 0) === 1 ? "" : "s"}
+                {" • "}{summary?.totalTrades ?? backtest.totalTrades} total trade{(summary?.totalTrades ?? backtest.totalTrades) === 1 ? "" : "s"}
+                {" · "}{summary?.buyCount ?? 0} BUY / {summary?.sellCount ?? 0} SELL{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
               </p>
               {/* ===== Buy/Sell/Total 统计卡片，第二行 ===== */}
               <div className="flex flex-wrap gap-6 mb-6">
@@ -356,12 +356,15 @@ export default function BacktestDetails() {
               </div>
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Closed Trades</div>
-              <div className="mt-2 text-3xl font-bold text-gray-900">{backtest.totalTrades}</div>
+              <div className="text-xs font-semibold text-gray-600 uppercase">Total Trades</div>
+              <div className="mt-2 text-3xl font-bold text-gray-900">{summary?.totalTrades ?? backtest.totalTrades}</div>
               <div className="mt-1 text-xs text-gray-600">
-                {backtest.winningTrades}W / {backtest.losingTrades}L{overallBreakeven > 0 ? ` / ${overallBreakeven}BE` : ""}
+                {summary?.buyCount ?? 0}B / {summary?.sellCount ?? 0}S{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
               </div>
-              <div className="mt-0.5 text-[11px] text-gray-500">round-trip (BUY → SELL)</div>
+              <div className="mt-0.5 text-[11px] text-gray-500">
+                {summary?.winningCount ?? backtest.winningTrades}W · {summary?.losingCount ?? backtest.losingTrades}L
+                {(summary?.breakevenCount ?? 0) > 0 ? ` · ${summary.breakevenCount}BE` : ""}
+              </div>
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">P&L</div>
@@ -653,7 +656,21 @@ export default function BacktestDetails() {
                           <div className="text-xs text-gray-500">ID {trade.marketId}</div>
                         </td>
                         <td className="px-6 py-3">
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${trade.action === 'BUY' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{trade.action}</span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${trade.action === 'BUY' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{trade.action}</span>
+                            {trade.action === 'BUY' && trade.positionOutcome && (
+                              <span
+                                title={`Position ${trade.positionStatus || ''} · avg exit ${trade.positionAvgExitPrice != null ? '$' + Number(trade.positionAvgExitPrice).toFixed(4) : 'n/a'}`}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  trade.positionOutcome === 'WIN' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  trade.positionOutcome === 'LOSS' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                  'bg-gray-100 text-gray-600 border-gray-200'
+                                }`}
+                              >
+                                {trade.positionOutcome === 'WIN' ? 'W' : trade.positionOutcome === 'LOSS' ? 'L' : 'BE'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-3 text-gray-600 text-xs">{formatTradeTime(trade.time)}</td>
                         <td className="px-6 py-3 text-gray-900 font-bold">{trade.price !== undefined ? `$${Number(trade.price).toFixed(4)}` : '-'}</td>

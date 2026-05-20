@@ -465,11 +465,14 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
 
       const marketTerminalSnapshot = lastSnapshotByMarket.get(marketId) || terminalSnapshot;
       const markedPrice = latestPriceByMarket.get(marketId) || terminalPrice;
-      const exitPrice = getPrimaryPrice(marketTerminalSnapshot) || markedPrice;
-
-      if (exitPrice <= 0) {
-        continue;
-      }
+      // Settle unpaired BUYs at the best available terminal price for the market.
+      // IMPORTANT: do NOT skip when exit price is 0 — a market that resolved against the
+      // position direction has primary outcome price = 0, which means the BUY is a total
+      // loss (purchased shares are worth nothing). Previously we skipped these, leaving
+      // unpaired BUYs in the trade log and producing the tally mismatch (e.g. 26 BUYs / 4
+      // SELLs in backtest 330). A position held to close is now always realized.
+      const rawExit = getPrimaryPrice(marketTerminalSnapshot);
+      const exitPrice = Number.isFinite(rawExit) ? rawExit : (Number.isFinite(markedPrice) ? markedPrice : 0);
 
       const proceeds = position.shares * exitPrice;
       const profit = proceeds - position.costBasis;
@@ -483,7 +486,9 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
         amount: proceeds,
         shares: position.shares,
         profit,
-        signal: 'Auto-close at end of backtest window',
+        signal: exitPrice <= 0
+          ? 'Settled at market close (resolved against position — total loss)'
+          : 'Auto-close at end of backtest window',
         cashBalance,
         positionShares: 0,
         positionCostBasis: 0,
@@ -505,11 +510,13 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
 
     const winningTrades = trades.filter(t => t.action === 'SELL' && t.profit > 0).length;
     const losingTrades = trades.filter(t => t.action === 'SELL' && t.profit < 0).length;
-    const totalTrades = trades.filter(t => t.action === 'SELL').length;
+    // Boss requirement: Total Trades = ALL trades (every BUY and SELL row), not just SELLs.
+    const totalTrades = trades.length;
+    const sellCount = trades.filter(t => t.action === 'SELL').length;
     const decisiveTrades = winningTrades + losingTrades;
     const winRate = decisiveTrades > 0 ? (winningTrades / decisiveTrades) * 100 : 0;
 
-    if (totalTrades === 0) {
+    if (trades.length === 0) {
       const reasonParts = [
         `markets=${marketCount}`,
         `snapshots=${snapshotCount}`,
@@ -959,22 +966,12 @@ async function getBacktestReport(backtestId) {
   const marketById = new Map(marketDetails.map((market) => [market.marketId, market]));
   const marketPriceSeries = marketPriceSnapshots.reduce((acc, snapshot) => {
     const marketId = String(snapshot?.marketId || '').trim();
-    if (!marketId) {
-      return {
-        report: {
-          backtest: {
-            ...backtest,
-            tradeHistory: undefined
-          },
-          trades: tradeHistory,
-          summary,
-          markets,
-          marketPriceSeries,
-          warning: missingTxIdCount > 0 ? `${missingTxIdCount} trades were missing transactionId and have been auto-assigned.` : undefined
-        }
-      };
-    }
+    if (!marketId) return acc;
 
+    const { yesPrice, noPrice } = getYesNoPrices(snapshot);
+    const fallbackPrice = getPrimaryPrice(snapshot);
+
+    if (!acc[marketId]) acc[marketId] = [];
     acc[marketId].push({
       time: snapshot.intervalStart,
       price: fallbackPrice,
@@ -985,11 +982,188 @@ async function getBacktestReport(backtestId) {
     return acc;
   }, {});
 
+  // ============================================================================
+  // PER-BUY POSITION ACCOUNTING (boss requirement)
+  //
+  // Treat every BUY row as one independent position. For each BUY:
+  //   1. FIFO-match its shares against subsequent SELLs on the same market.
+  //   2. Any shares of the BUY that remain unmatched at end-of-window are
+  //      "settled" at the market close price (1.0 if primary outcome won,
+  //      0.0 if it lost, last-known price if still open → treated as gone).
+  //   3. The BUY's outcome (WIN / LOSS / BREAKEVEN) is judged by its realized
+  //      P&L = (sumOfExitProceeds) - (entryCost). This means every BUY ends
+  //      up in exactly one of WIN / LOSS / BREAKEVEN — no BUY is left
+  //      "uncounted" just because the engine never emitted a paired SELL row.
+  //
+  // We DO NOT add synthetic SELL rows to the trade table — the table still
+  // shows the raw 26 BUY + 4 SELL = 30 rows. Instead each BUY row gets
+  // annotated with positionProfit / positionOutcome / positionStatus so the
+  // dashboard can display per-row win/loss badges and the headline tally
+  // (Total Trades, Wins, Losses) is derived from BUY positions, not SELLs.
+  // ============================================================================
+
+  // Settlement price per market (priority: live resolved → last snapshot → 0).
+  const settlementPriceByMarket = new Map();
+  for (const market of marketDetails) {
+    const mid = String(market.marketId);
+    let settlePrice = null;
+
+    if (Array.isArray(market.outcomePrices) && market.outcomePrices.length > 0) {
+      const primary = Number(market.outcomePrices[0]);
+      if (Number.isFinite(primary)) settlePrice = primary;
+    }
+
+    if (settlePrice === null) {
+      const series = marketPriceSeries[mid];
+      if (Array.isArray(series) && series.length > 0) {
+        const lastPoint = series[series.length - 1];
+        const lastPrice = Number(lastPoint?.price);
+        if (Number.isFinite(lastPrice)) settlePrice = lastPrice;
+      }
+    }
+
+    settlementPriceByMarket.set(mid, settlePrice === null ? 0 : settlePrice);
+  }
+
+  // Group trades by market and tag each with its original index so we can
+  // annotate the right row at the end.
+  const indexedTradeHistory = tradeHistory.map((t, i) => ({ ...t, __idx: i }));
+  const tradesByMarketSorted = new Map();
+  for (const t of indexedTradeHistory) {
+    const mid = String(t?.marketId || '');
+    if (!mid) continue;
+    if (!tradesByMarketSorted.has(mid)) tradesByMarketSorted.set(mid, []);
+    tradesByMarketSorted.get(mid).push(t);
+  }
+  for (const arr of tradesByMarketSorted.values()) {
+    arr.sort((a, b) => new Date(a?.time || 0) - new Date(b?.time || 0));
+  }
+
+  // buyOutcomeByIndex[__idx] = { entryPrice, entryShares, entryCost,
+  //   proceeds, sharesSold, sharesSettled, settlePrice, profit, outcome,
+  //   status, exits: [{ shares, price, time, type: 'SELL'|'SETTLE' }] }
+  const buyOutcomeByIndex = new Map();
+  // sellPairingByIndex[__idx] = { totalShares, matchedShares, proceeds,
+  //   matchedCost, profit, matchedBuyIndexes: [] }
+  const sellPairingByIndex = new Map();
+
+  for (const [mid, list] of tradesByMarketSorted.entries()) {
+    // FIFO queue of open BUY lots for this market.
+    const openLots = []; // [{ buyIdx, sharesRemaining, entryPrice, costRemaining }]
+
+    for (const t of list) {
+      const action = String(t?.action || '').toUpperCase();
+      const tShares = Number(t?.shares || 0);
+      const tAmount = Number(t?.amount || 0);
+      const tPrice = Number(t?.price || 0);
+
+      if (action === 'BUY') {
+        if (tShares <= 0) continue;
+        buyOutcomeByIndex.set(t.__idx, {
+          entryPrice: tPrice,
+          entryShares: tShares,
+          entryCost: tAmount > 0 ? tAmount : tShares * tPrice,
+          proceeds: 0,
+          sharesSold: 0,
+          sharesSettled: 0,
+          settlePrice: null,
+          exits: [],
+        });
+        openLots.push({
+          buyIdx: t.__idx,
+          sharesRemaining: tShares,
+          entryPrice: tPrice,
+          costRemaining: tAmount > 0 ? tAmount : tShares * tPrice,
+        });
+      } else if (action === 'SELL') {
+        if (tShares <= 0) continue;
+        const sellInfo = {
+          totalShares: tShares,
+          matchedShares: 0,
+          proceeds: 0,
+          matchedCost: 0,
+          matchedBuyIndexes: [],
+        };
+        sellPairingByIndex.set(t.__idx, sellInfo);
+
+        let remainingSell = tShares;
+        while (remainingSell > 1e-9 && openLots.length > 0) {
+          const lot = openLots[0];
+          const take = Math.min(lot.sharesRemaining, remainingSell);
+          const takeProceeds = take * tPrice;
+          const takeCost = lot.sharesRemaining > 0
+            ? (lot.costRemaining * take) / lot.sharesRemaining
+            : 0;
+
+          // Record exit on the BUY lot.
+          const buyOut = buyOutcomeByIndex.get(lot.buyIdx);
+          if (buyOut) {
+            buyOut.proceeds += takeProceeds;
+            buyOut.sharesSold += take;
+            buyOut.exits.push({ shares: take, price: tPrice, time: t?.time || null, type: 'SELL' });
+          }
+
+          // Record on the SELL pairing.
+          sellInfo.matchedShares += take;
+          sellInfo.proceeds += takeProceeds;
+          sellInfo.matchedCost += takeCost;
+          if (!sellInfo.matchedBuyIndexes.includes(lot.buyIdx)) {
+            sellInfo.matchedBuyIndexes.push(lot.buyIdx);
+          }
+
+          lot.sharesRemaining -= take;
+          lot.costRemaining -= takeCost;
+          remainingSell -= take;
+          if (lot.sharesRemaining <= 1e-9) openLots.shift();
+        }
+
+        sellInfo.profit = sellInfo.proceeds - sellInfo.matchedCost;
+        // (Any oversell shares with no matching BUY are ignored — engine
+        //  should never emit that, but we don't crash if it does.)
+      }
+    }
+
+    // Settle any remaining open lots at market close price.
+    const settlePrice = settlementPriceByMarket.has(mid) ? settlementPriceByMarket.get(mid) : 0;
+    for (const lot of openLots) {
+      if (lot.sharesRemaining <= 1e-9) continue;
+      const buyOut = buyOutcomeByIndex.get(lot.buyIdx);
+      if (!buyOut) continue;
+      const settleProceeds = lot.sharesRemaining * settlePrice;
+      buyOut.proceeds += settleProceeds;
+      buyOut.sharesSettled += lot.sharesRemaining;
+      buyOut.settlePrice = settlePrice;
+      buyOut.exits.push({
+        shares: lot.sharesRemaining,
+        price: settlePrice,
+        time: backtest.endTime || null,
+        type: 'SETTLE',
+      });
+      lot.sharesRemaining = 0;
+      lot.costRemaining = 0;
+    }
+  }
+
+  // Finalize per-BUY outcomes (profit, outcome label, status).
+  for (const buyOut of buyOutcomeByIndex.values()) {
+    buyOut.profit = buyOut.proceeds - buyOut.entryCost;
+    if (buyOut.profit > 1e-6) buyOut.outcome = 'WIN';
+    else if (buyOut.profit < -1e-6) buyOut.outcome = 'LOSS';
+    else buyOut.outcome = 'BREAKEVEN';
+
+    if (buyOut.sharesSettled <= 1e-9) buyOut.status = 'CLOSED_BY_SELL';
+    else if (buyOut.sharesSold <= 1e-9) buyOut.status = 'SETTLED_AT_CLOSE';
+    else buyOut.status = 'PARTIAL_SELL_SETTLED';
+
+    buyOut.avgExitPrice = buyOut.entryShares > 0 ? buyOut.proceeds / buyOut.entryShares : 0;
+  }
+
   const trades = tradeHistory.map((trade, index) => {
     const marketId = String(trade?.marketId || '');
     const market = marketById.get(marketId);
+    const action = String(trade?.action || '').toUpperCase();
 
-    return {
+    const base = {
       index: index + 1,
       time: trade?.time || null,
       action: trade?.action || null,
@@ -1001,40 +1175,88 @@ async function getBacktestReport(backtestId) {
       shares: Number(trade?.shares || 0),
       profit: trade?.profit !== undefined && trade?.profit !== null ? Number(trade.profit) : null,
       signal: trade?.signal || null,
-      cashBalance: Number(trade?.cashBalance || 0),
-      positionShares: Number(trade?.positionShares || 0)
+      cashBalance: trade?.cashBalance === null || trade?.cashBalance === undefined ? null : Number(trade.cashBalance),
+      positionShares: Number(trade?.positionShares || 0),
+      isSettlement: false,
     };
+
+    if (action === 'BUY') {
+      const buyOut = buyOutcomeByIndex.get(index);
+      if (buyOut) {
+        base.positionProfit = buyOut.profit;
+        base.positionOutcome = buyOut.outcome;
+        base.positionStatus = buyOut.status;
+        base.positionAvgExitPrice = buyOut.avgExitPrice;
+        base.positionSharesSold = buyOut.sharesSold;
+        base.positionSharesSettled = buyOut.sharesSettled;
+        base.positionSettlePrice = buyOut.settlePrice;
+        // Override `profit` so the table shows the realized result per BUY.
+        base.profit = buyOut.profit;
+      }
+    } else if (action === 'SELL') {
+      const sellInfo = sellPairingByIndex.get(index);
+      if (sellInfo) {
+        base.matchedShares = sellInfo.matchedShares;
+        base.matchedBuyIndexes = sellInfo.matchedBuyIndexes;
+        // Engine's stored profit on a SELL row is sometimes wrong for partial
+        // closes — recompute from FIFO.
+        if (base.profit === null) base.profit = sellInfo.profit;
+      }
+    }
+
+    return base;
   });
 
-  const buyCount = trades.filter((trade) => trade.action === 'BUY').length;
-  const sellCount = trades.filter((trade) => trade.action === 'SELL').length;
-  const winningSellCount = trades.filter((trade) => trade.action === 'SELL' && Number(trade.profit || 0) > 0).length;
-  const losingSellCount = trades.filter((trade) => trade.action === 'SELL' && Number(trade.profit || 0) <= 0).length;
+  // ============================================================================
+  // Authoritative summary — per-BUY position accounting.
+  //   • totalTrades   = every row in the trade table (BUY + SELL)
+  //   • positionCount = # of BUY rows (each BUY = one position)
+  //   • positionWins / positionLosses / positionBreakeven from per-BUY P&L
+  //   • settledCount  = BUYs that needed settlement at market close
+  // ============================================================================
+  const buyTrades = trades.filter((t) => String(t.action).toUpperCase() === 'BUY');
+  const sellTrades = trades.filter((t) => String(t.action).toUpperCase() === 'SELL');
+  const buyCount = buyTrades.length;
+  const sellCount = sellTrades.length;
 
-  // 调试输出
-  const sellTrades = trades.filter(t => t.action === 'SELL');
-  console.log('SELL count:', sellTrades.length);
-  console.log('SELL trades:', sellTrades);
-  console.log('ALL trades count:', trades.length);
-  // 新增日志：pairedTrades 计算前输出所有 transactionId
-  const allTxIdsForPair = trades.map(t => t.transactionId);
-  console.log('[DEBUG] trades transactionIds for pairedTrades:', allTxIdsForPair);
-  // tradeHistory 为空时 pairedTrades 返回 null
-  let pairedTrades = null;
-  if (trades.length > 0) {
-    pairedTrades = Array.from(new Set(trades.map(t => t.transactionId))).filter(Boolean).length;
-    if (!pairedTrades || isNaN(pairedTrades)) pairedTrades = 0;
-  } else {
-    pairedTrades = 0;
-  }
-  console.log('[DEBUG] pairedTrades:', pairedTrades);
-  const totalTradeActions = trades.length;
-  const totalSellActions = trades.filter(t => t.action === 'SELL').length;
+  const positionWins = buyTrades.filter((t) => t.positionOutcome === 'WIN').length;
+  const positionLosses = buyTrades.filter((t) => t.positionOutcome === 'LOSS').length;
+  const positionBreakeven = buyTrades.filter((t) => t.positionOutcome === 'BREAKEVEN').length;
+  const settledCount = buyTrades.filter((t) =>
+    t.positionStatus === 'SETTLED_AT_CLOSE' || t.positionStatus === 'PARTIAL_SELL_SETTLED'
+  ).length;
+  const decisive = positionWins + positionLosses;
+  const recomputedWinRate = decisive > 0 ? (positionWins / decisive) * 100 : 0;
+
+  // Realized P&L = sum of per-BUY realized profit.
+  const realizedPnlFromBuys = buyTrades.reduce(
+    (sum, t) => sum + Number(t.positionProfit || 0),
+    0
+  );
+  const storedInitial = Number(backtest.initialCapital || 0);
+  const recomputedFinalValue = storedInitial + realizedPnlFromBuys;
+  const recomputedPnl = realizedPnlFromBuys;
+  const recomputedRoi = storedInitial > 0 ? (recomputedPnl / storedInitial) * 100 : 0;
+
   const summary = {
-    pairedTrades, // Number of unique transactionId (paired buy/sell)
-    totalTradeActions, // Total number of trade actions (BUY + SELL)
-    totalSellActions, // Total number of SELL actions (often matches totalTrades in summary)
-    note: 'pairedTrades = unique transactionId (paired buy/sell); totalTradeActions = all trades; totalSellActions = SELLs only.'
+    // Trade table tally (raw facts).
+    totalTrades: trades.length,
+    buyCount,                 // # BUY rows
+    sellCount,                // # SELL rows
+    // Per-BUY position accounting (each BUY judged as its own win/loss).
+    positionCount: buyCount,
+    positionWins,
+    positionLosses,
+    positionBreakeven,
+    settledCount,             // BUYs whose shares were (partly) settled at close
+    // Kept for back-compat with older frontend code paths.
+    winningCount: positionWins,
+    losingCount: positionLosses,
+    breakevenCount: positionBreakeven,
+    winRate: recomputedWinRate,
+    realizedPnl: recomputedPnl,
+    realizedFinalValue: recomputedFinalValue,
+    note: 'Each BUY row = one position. Win/Loss judged from FIFO-matched SELLs + settle-at-close for unmatched shares ($1 if primary outcome won, $0 if lost).',
   };
   console.log('SUMMARY:', summary);
   return {
@@ -1048,15 +1270,16 @@ async function getBacktestReport(backtestId) {
       startTime: backtest.startTime,
       endTime: backtest.endTime,
       initialCapital: backtest.initialCapital,
-      finalValue: backtest.finalValue,
-      pnl: backtest.pnl,
-      roi: backtest.roi,
-      winRate: backtest.winRate,
+      finalValue: recomputedFinalValue,
+      pnl: recomputedPnl,
+      roi: recomputedRoi,
+      winRate: recomputedWinRate,
       maxDrawdown: backtest.maxDrawdown,
       params: backtest.params,
-      totalTrades: backtest.totalTrades,
-      winningTrades: backtest.winningTrades,
-      losingTrades: backtest.losingTrades
+      // Headline tallies now use the authoritative recomputed numbers.
+      totalTrades: trades.length,
+      winningTrades: positionWins,
+      losingTrades: positionLosses,
     },
     summary,
     markets: marketDetails,

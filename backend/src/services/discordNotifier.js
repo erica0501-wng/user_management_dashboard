@@ -117,6 +117,15 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
 
   console.log(`[discord] notifyBacktestCompleted backtestId=${backtest.id ?? "(none)"} marketId=${marketId ?? "(none)"} detailsUrl=${detailsUrl ?? "(none)"}`)
 
+  // Derive accurate trade counts from tradeHistory (matches dashboard report tally).
+  const tradeHistory = Array.isArray(backtest.tradeHistory) ? backtest.tradeHistory : []
+  const buyCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY").length
+  const sellCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL").length
+  const totalTradeRows = tradeHistory.length || Number(backtest.totalTrades || 0)
+  const tradesValue = tradeHistory.length > 0
+    ? `${totalTradeRows} (${buyCount}B / ${sellCount}S, ${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
+    : `${fmtNum(backtest.totalTrades)} (${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
+
   return postToDiscord({
     embeds: [{
       title: `${emoji} Backtest completed: ${groupName} / ${strategyName}`,
@@ -129,7 +138,7 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
         { name: "PnL", value: fmtNum(backtest.pnl), inline: true },
         { name: "ROI", value: fmtPct(backtest.roi), inline: true },
         { name: "Win rate", value: fmtPct(backtest.winRate), inline: true },
-        { name: "Trades", value: `${fmtNum(backtest.totalTrades)} (${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`, inline: true },
+        { name: "Trades", value: tradesValue, inline: true },
         { name: "Max drawdown", value: fmtPct(backtest.maxDrawdown), inline: true },
         { name: "Initial → Final", value: `${fmtNum(backtest.initialCapital)} → ${fmtNum(backtest.finalValue)}`, inline: true },
         { name: "Window", value: `${new Date(backtest.startTime).toISOString().slice(0, 10)} → ${new Date(backtest.endTime).toISOString().slice(0, 10)}`, inline: false },
