@@ -6,6 +6,8 @@
  *           DISCORD_NOTIFY_DAILY_DIGEST=true|false (default true)
  */
 
+const prisma = require("../prisma")
+
 const DEFAULT_USERNAME = "Polymarket Bot"
 
 function isEnabled(envKey, defaultEnabled = true) {
@@ -118,11 +120,10 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
   console.log(`[discord] notifyBacktestCompleted backtestId=${backtest.id ?? "(none)"} marketId=${marketId ?? "(none)"} detailsUrl=${detailsUrl ?? "(none)"}`)
 
   // Derive accurate trade counts from tradeHistory (matches dashboard report tally).
-  // Prisma can return Json columns as either a parsed array or a JSON string depending on
-  // the driver/config, so handle both. Older Backtest rows also stored
-  // backtest.totalTrades = winningTrades + losingTrades (e.g. 4W + 0L = 4), which heavily
-  // under-counts the real trade-row total — never fall back to that field for the headline
-  // if we can derive B + S from the trade history.
+  // Sources, in priority order:
+  //   1. `trades` arg from caller (always populated by backtestEngine in-memory)
+  //   2. `backtest.tradeHistory` (parsed array or Json string from Prisma)
+  //   3. DB refetch by backtest.id (last-resort safety net for callers that pass a stripped row)
   let tradeHistory = []
   if (Array.isArray(trades)) {
     tradeHistory = trades
@@ -136,14 +137,30 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
       tradeHistory = []
     }
   }
+  if (tradeHistory.length === 0 && backtest.id) {
+    try {
+      const row = await prisma.backtest.findUnique({
+        where: { id: Number(backtest.id) },
+        select: { tradeHistory: true },
+      })
+      const raw = row?.tradeHistory
+      if (Array.isArray(raw)) {
+        tradeHistory = raw
+      } else if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) tradeHistory = parsed
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      console.warn(`[discord] tradeHistory refetch failed for backtest ${backtest.id}: ${err?.message || err}`)
+    }
+  }
   const buyCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY").length
   const sellCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL").length
-  const totalTradeRows = tradeHistory.length > 0
-    ? buyCount + sellCount
-    : Number(backtest.totalTrades || 0)
-  const tradesValue = tradeHistory.length > 0
-    ? `${totalTradeRows} (${buyCount}B / ${sellCount}S, ${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
-    : `${fmtNum(backtest.totalTrades)} (${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
+  const totalTradeRows = buyCount + sellCount
 
   return postToDiscord({
     embeds: [{
@@ -157,11 +174,13 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
         { name: "PnL", value: fmtNum(backtest.pnl), inline: true },
         { name: "ROI", value: fmtPct(backtest.roi), inline: true },
         { name: "Win rate", value: fmtPct(backtest.winRate), inline: true },
-        { name: "Trades", value: tradesValue, inline: true },
+        { name: "Total Trades", value: fmtNum(totalTradeRows), inline: true },
+        { name: "Buy / Sell", value: `${fmtNum(buyCount)}B / ${fmtNum(sellCount)}S`, inline: true },
+        { name: "Win / Loss", value: `${fmtNum(backtest.winningTrades)}W \u00B7 ${fmtNum(backtest.losingTrades)}L`, inline: true },
         { name: "Max drawdown", value: fmtPct(backtest.maxDrawdown), inline: true },
-        { name: "Initial → Final", value: `${fmtNum(backtest.initialCapital)} → ${fmtNum(backtest.finalValue)}`, inline: true },
-        { name: "Window", value: `${new Date(backtest.startTime).toISOString().slice(0, 10)} → ${new Date(backtest.endTime).toISOString().slice(0, 10)}`, inline: false },
-        ...(detailsUrl ? [{ name: "Details", value: `[Open backtest report ↗](${detailsUrl})`, inline: false }] : []),
+        { name: "Initial \u2192 Final", value: `${fmtNum(backtest.initialCapital)} \u2192 ${fmtNum(backtest.finalValue)}`, inline: true },
+        { name: "Window", value: `${new Date(backtest.startTime).toISOString().slice(0, 10)} \u2192 ${new Date(backtest.endTime).toISOString().slice(0, 10)}`, inline: false },
+        ...(detailsUrl ? [{ name: "Details", value: `[Open backtest report \u2197](${detailsUrl})`, inline: false }] : []),
       ],
     }],
   })
