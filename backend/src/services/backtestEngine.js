@@ -606,13 +606,28 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
     // promises are killed when the lambda response is returned. Awaiting
     // ensures the webhook actually fires before the function exits.
     try {
+      // Pull the authoritative summary (positionWins / positionLosses /
+      // positionBreakeven, recomputed winRate, B+S tally) so the Discord
+      // embed mirrors what the dashboard shows. The raw saved tradeHistory
+      // does NOT have positionOutcome attached — only getBacktestReport adds it.
+      let reportSummary = null
+      let reportBacktest = null
+      try {
+        const report = await getBacktestReport(savedBacktest.id)
+        reportSummary = report?.summary || null
+        reportBacktest = report?.backtest || null
+      } catch (reportErr) {
+        console.warn('[discord] getBacktestReport for summary failed:', reportErr?.message || reportErr)
+      }
+
       await discord.notifyBacktestCompleted({
         groupName,
         strategyName,
-        backtest: savedBacktest,
+        backtest: reportBacktest || savedBacktest,
         marketId: normalizedMarketId,
         marketQuestion: resolvedMarketQuestion,
         trades,
+        summary: reportSummary,
       })
     } catch (err) {
       console.error('[discord] notifyBacktestCompleted failed:', err?.message || err)

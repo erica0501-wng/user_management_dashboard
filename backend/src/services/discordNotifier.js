@@ -101,7 +101,7 @@ async function notifyArchiveCompleted(result) {
 }
 
 /** Notify when a backtest finishes. Pass the saved Backtest row + group meta. */
-async function notifyBacktestCompleted({ groupName, strategyName, backtest, marketId = null, marketQuestion = null, trades = null }) {
+async function notifyBacktestCompleted({ groupName, strategyName, backtest, marketId = null, marketQuestion = null, trades = null, summary = null }) {
   if (!isEnabled("DISCORD_NOTIFY_BACKTEST")) return { skipped: true }
   if (!backtest) return { skipped: true }
 
@@ -160,25 +160,43 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
   }
   const buyRows = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY")
   const sellRows = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL")
-  const buyCount = buyRows.length
-  const sellCount = sellRows.length
+  const buyCountRaw = buyRows.length
+  const sellCountRaw = sellRows.length
+
+  // Prefer authoritative summary (computed by getBacktestReport with per-BUY
+  // position attribution). Falls back to BUY-row positionOutcome tags if those
+  // were attached upstream, else to the SELL-based winningTrades/losingTrades.
+  const summaryHasCounts = summary && (summary.buyCount != null || summary.sellCount != null)
+  const buyCount = summaryHasCounts ? Number(summary.buyCount || 0) : buyCountRaw
+  const sellCount = summaryHasCounts ? Number(summary.sellCount || 0) : sellCountRaw
   const totalTradeRows = buyCount + sellCount
 
-  // W / L / BE are tallied per-BUY-position (matches the dashboard's Trade Summary).
-  // Each BUY row has positionOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' attached by
-  // backtestEngine. Falls back to the SELL-based winningTrades / losingTrades only
-  // if positionOutcome data is missing entirely.
-  const positionWins = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "WIN").length
-  const positionLosses = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "LOSS").length
-  const positionBreakeven = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "BREAKEVEN").length
-  const hasPositionOutcome = positionWins + positionLosses + positionBreakeven > 0
-  const winsField = hasPositionOutcome ? positionWins : Number(backtest.winningTrades || 0)
-  const lossesField = hasPositionOutcome ? positionLosses : Number(backtest.losingTrades || 0)
-  const beField = hasPositionOutcome ? positionBreakeven : 0
-  const decisive = winsField + lossesField
-  const winRateDisplay = hasPositionOutcome
-    ? (decisive > 0 ? (winsField / decisive) * 100 : 0)
-    : Number(backtest.winRate || 0)
+  const positionWinsTagged = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "WIN").length
+  const positionLossesTagged = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "LOSS").length
+  const positionBreakevenTagged = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "BREAKEVEN").length
+  const hasSummaryPos = summary && (summary.positionWins != null || summary.positionLosses != null || summary.positionBreakeven != null)
+  const hasTaggedPos = positionWinsTagged + positionLossesTagged + positionBreakevenTagged > 0
+  let winsField, lossesField, beField, winRateDisplay
+  if (hasSummaryPos) {
+    winsField = Number(summary.positionWins || 0)
+    lossesField = Number(summary.positionLosses || 0)
+    beField = Number(summary.positionBreakeven || 0)
+    const decisive = winsField + lossesField
+    winRateDisplay = summary.winRate != null
+      ? Number(summary.winRate)
+      : (decisive > 0 ? (winsField / decisive) * 100 : 0)
+  } else if (hasTaggedPos) {
+    winsField = positionWinsTagged
+    lossesField = positionLossesTagged
+    beField = positionBreakevenTagged
+    const decisive = winsField + lossesField
+    winRateDisplay = decisive > 0 ? (winsField / decisive) * 100 : 0
+  } else {
+    winsField = Number(backtest.winningTrades || 0)
+    lossesField = Number(backtest.losingTrades || 0)
+    beField = 0
+    winRateDisplay = Number(backtest.winRate || 0)
+  }
   const winLossValue = beField > 0
     ? `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L \u00B7 ${fmtNum(beField)}BE`
     : `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L`
