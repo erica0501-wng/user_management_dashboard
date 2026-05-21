@@ -172,14 +172,23 @@ export default function BacktestDetails() {
 
   // Authoritative trade-row tally: every BUY + every SELL row in the trade table.
   // Older backtests stored backtest.totalTrades = winningTrades + losingTrades (e.g. 3W +
-  // 16L = 19), which under-counts because it ignores BUYs and breakeven SELLs. Always
-  // prefer the recomputed buy/sell counts from `summary` (or fall back to counting `trades`
-  // directly) so the headline reflects 42B + 19S = 61 instead of 19.
+  // 16L = 19), which under-counts because it ignores BUYs and breakeven SELLs. We always
+  // recompute from the actual trade rows so the headline reflects 42B + 19S = 61 instead
+  // of the stale DB column. Falls back to `summary` then `backtest.totalTrades` only when
+  // the trades array is missing entirely.
+  const buyCountDerived = Array.isArray(trades)
+    ? trades.filter(t => String(t?.action).toUpperCase() === "BUY").length
+    : null
+  const sellCountDerived = Array.isArray(trades)
+    ? trades.filter(t => String(t?.action).toUpperCase() === "SELL").length
+    : null
+  const buyCountDisplay = buyCountDerived ?? Number(summary?.buyCount || 0)
+  const sellCountDisplay = sellCountDerived ?? Number(summary?.sellCount || 0)
   const tradeRowsTotal = (() => {
+    if (Array.isArray(trades) && trades.length > 0) return trades.length
     if (summary && (summary.buyCount != null || summary.sellCount != null)) {
       return Number(summary.buyCount || 0) + Number(summary.sellCount || 0)
     }
-    if (Array.isArray(trades)) return trades.length
     return Number(backtest?.totalTrades || 0)
   })()
 
@@ -372,7 +381,7 @@ export default function BacktestDetails() {
               <div className="text-xs font-semibold text-gray-600 uppercase">Total Trades</div>
               <div className="mt-2 text-3xl font-bold text-gray-900">{tradeRowsTotal}</div>
               <div className="mt-1 text-xs text-gray-600">
-                {summary?.buyCount ?? 0}B / {summary?.sellCount ?? 0}S{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
+                {buyCountDisplay}B / {sellCountDisplay}S{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
               </div>
               <div className="mt-0.5 text-[11px] text-gray-500">
                 {summary?.winningCount ?? backtest.winningTrades}W · {summary?.losingCount ?? backtest.losingTrades}L
@@ -519,7 +528,7 @@ export default function BacktestDetails() {
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-xs">
                   <span className="text-gray-500">Trade rows</span>
                   <span className="font-medium text-gray-700">
-                    {tradeRowsTotal} ({summary?.buyCount ?? 0}B / {summary?.sellCount ?? 0}S · {summary?.winningCount ?? backtest.winningTrades}W / {summary?.losingCount ?? backtest.losingTrades}L{(summary?.breakevenCount ?? overallBreakeven) > 0 ? ` / ${summary?.breakevenCount ?? overallBreakeven}BE` : ""})
+                    {tradeRowsTotal} ({buyCountDisplay}B / {sellCountDisplay}S · {summary?.winningCount ?? backtest.winningTrades}W / {summary?.losingCount ?? backtest.losingTrades}L{(summary?.breakevenCount ?? overallBreakeven) > 0 ? ` / ${summary?.breakevenCount ?? overallBreakeven}BE` : ""})
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-gray-200 pt-3">
