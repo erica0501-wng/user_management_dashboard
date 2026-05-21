@@ -386,6 +386,7 @@ export default function BacktestDetails() {
               <div className="mt-0.5 text-[11px] text-gray-500">
                 {summary?.winningCount ?? backtest.winningTrades}W · {summary?.losingCount ?? backtest.losingTrades}L
                 {(summary?.breakevenCount ?? 0) > 0 ? ` · ${summary.breakevenCount}BE` : ""}
+                {sellCountDisplay > 0 ? ` · ${sellCountDisplay}N` : ""}
               </div>
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
