@@ -118,10 +118,27 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
   console.log(`[discord] notifyBacktestCompleted backtestId=${backtest.id ?? "(none)"} marketId=${marketId ?? "(none)"} detailsUrl=${detailsUrl ?? "(none)"}`)
 
   // Derive accurate trade counts from tradeHistory (matches dashboard report tally).
-  const tradeHistory = Array.isArray(backtest.tradeHistory) ? backtest.tradeHistory : []
+  // Prisma can return Json columns as either a parsed array or a JSON string depending on
+  // the driver/config, so handle both. Older Backtest rows also stored
+  // backtest.totalTrades = winningTrades + losingTrades (e.g. 4W + 0L = 4), which heavily
+  // under-counts the real trade-row total — never fall back to that field for the headline
+  // if we can derive B + S from the trade history.
+  let tradeHistory = []
+  if (Array.isArray(backtest.tradeHistory)) {
+    tradeHistory = backtest.tradeHistory
+  } else if (typeof backtest.tradeHistory === "string") {
+    try {
+      const parsed = JSON.parse(backtest.tradeHistory)
+      if (Array.isArray(parsed)) tradeHistory = parsed
+    } catch {
+      tradeHistory = []
+    }
+  }
   const buyCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY").length
   const sellCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL").length
-  const totalTradeRows = tradeHistory.length || Number(backtest.totalTrades || 0)
+  const totalTradeRows = tradeHistory.length > 0
+    ? buyCount + sellCount
+    : Number(backtest.totalTrades || 0)
   const tradesValue = tradeHistory.length > 0
     ? `${totalTradeRows} (${buyCount}B / ${sellCount}S, ${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
     : `${fmtNum(backtest.totalTrades)} (${fmtNum(backtest.winningTrades)}W / ${fmtNum(backtest.losingTrades)}L)`
