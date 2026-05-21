@@ -99,7 +99,7 @@ async function notifyArchiveCompleted(result) {
 }
 
 /** Notify when a backtest finishes. Pass the saved Backtest row + group meta. */
-async function notifyBacktestCompleted({ groupName, strategyName, backtest, marketId = null, marketQuestion = null }) {
+async function notifyBacktestCompleted({ groupName, strategyName, backtest, marketId = null, marketQuestion = null, trades = null }) {
   if (!isEnabled("DISCORD_NOTIFY_BACKTEST")) return { skipped: true }
   if (!backtest) return { skipped: true }
 
@@ -124,7 +124,9 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
   // under-counts the real trade-row total — never fall back to that field for the headline
   // if we can derive B + S from the trade history.
   let tradeHistory = []
-  if (Array.isArray(backtest.tradeHistory)) {
+  if (Array.isArray(trades)) {
+    tradeHistory = trades
+  } else if (Array.isArray(backtest.tradeHistory)) {
     tradeHistory = backtest.tradeHistory
   } else if (typeof backtest.tradeHistory === "string") {
     try {

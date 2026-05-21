@@ -612,6 +612,7 @@ async function runBacktest(groupName, strategyName = 'momentum', params = {}, op
         backtest: savedBacktest,
         marketId: normalizedMarketId,
         marketQuestion: resolvedMarketQuestion,
+        trades,
       })
     } catch (err) {
       console.error('[discord] notifyBacktestCompleted failed:', err?.message || err)
