@@ -158,9 +158,30 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
       console.warn(`[discord] tradeHistory refetch failed for backtest ${backtest.id}: ${err?.message || err}`)
     }
   }
-  const buyCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY").length
-  const sellCount = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL").length
+  const buyRows = tradeHistory.filter(t => String(t?.action).toUpperCase() === "BUY")
+  const sellRows = tradeHistory.filter(t => String(t?.action).toUpperCase() === "SELL")
+  const buyCount = buyRows.length
+  const sellCount = sellRows.length
   const totalTradeRows = buyCount + sellCount
+
+  // W / L / BE are tallied per-BUY-position (matches the dashboard's Trade Summary).
+  // Each BUY row has positionOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' attached by
+  // backtestEngine. Falls back to the SELL-based winningTrades / losingTrades only
+  // if positionOutcome data is missing entirely.
+  const positionWins = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "WIN").length
+  const positionLosses = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "LOSS").length
+  const positionBreakeven = buyRows.filter(t => String(t?.positionOutcome).toUpperCase() === "BREAKEVEN").length
+  const hasPositionOutcome = positionWins + positionLosses + positionBreakeven > 0
+  const winsField = hasPositionOutcome ? positionWins : Number(backtest.winningTrades || 0)
+  const lossesField = hasPositionOutcome ? positionLosses : Number(backtest.losingTrades || 0)
+  const beField = hasPositionOutcome ? positionBreakeven : 0
+  const decisive = winsField + lossesField
+  const winRateDisplay = hasPositionOutcome
+    ? (decisive > 0 ? (winsField / decisive) * 100 : 0)
+    : Number(backtest.winRate || 0)
+  const winLossValue = beField > 0
+    ? `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L \u00B7 ${fmtNum(beField)}BE`
+    : `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L`
 
   return postToDiscord({
     embeds: [{
@@ -173,10 +194,10 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
         ...(marketField ? [marketField] : []),
         { name: "PnL", value: fmtNum(backtest.pnl), inline: true },
         { name: "ROI", value: fmtPct(backtest.roi), inline: true },
-        { name: "Win rate", value: fmtPct(backtest.winRate), inline: true },
+        { name: "Win rate", value: fmtPct(winRateDisplay), inline: true },
         { name: "Total Trades", value: fmtNum(totalTradeRows), inline: true },
         { name: "Buy / Sell", value: `${fmtNum(buyCount)}B / ${fmtNum(sellCount)}S`, inline: true },
-        { name: "Win / Loss", value: `${fmtNum(backtest.winningTrades)}W \u00B7 ${fmtNum(backtest.losingTrades)}L`, inline: true },
+        { name: "Win / Loss", value: winLossValue, inline: true },
         { name: "Max drawdown", value: fmtPct(backtest.maxDrawdown), inline: true },
         { name: "Initial \u2192 Final", value: `${fmtNum(backtest.initialCapital)} \u2192 ${fmtNum(backtest.finalValue)}`, inline: true },
         { name: "Window", value: `${new Date(backtest.startTime).toISOString().slice(0, 10)} \u2192 ${new Date(backtest.endTime).toISOString().slice(0, 10)}`, inline: false },
