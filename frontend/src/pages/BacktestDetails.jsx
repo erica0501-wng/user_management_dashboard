@@ -170,6 +170,19 @@ export default function BacktestDetails() {
   const { backtest, trades, summary } = report
   const markets = Array.isArray(report.markets) ? report.markets : []
 
+  // Authoritative trade-row tally: every BUY + every SELL row in the trade table.
+  // Older backtests stored backtest.totalTrades = winningTrades + losingTrades (e.g. 3W +
+  // 16L = 19), which under-counts because it ignores BUYs and breakeven SELLs. Always
+  // prefer the recomputed buy/sell counts from `summary` (or fall back to counting `trades`
+  // directly) so the headline reflects 42B + 19S = 61 instead of 19.
+  const tradeRowsTotal = (() => {
+    if (summary && (summary.buyCount != null || summary.sellCount != null)) {
+      return Number(summary.buyCount || 0) + Number(summary.sellCount || 0)
+    }
+    if (Array.isArray(trades)) return trades.length
+    return Number(backtest?.totalTrades || 0)
+  })()
+
     // ===== 新增：统计 Buy/Sell/Total =====
     const buyTotal = (trades || []).filter(t => t.action === 'BUY').reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
     const sellTotal = (trades || []).filter(t => t.action === 'SELL').reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
@@ -315,7 +328,7 @@ export default function BacktestDetails() {
                 {backtest.marketQuestion
                   ? backtest.marketQuestion
                   : `${backtest.groupName} Group`}
-                {" • "}{summary?.totalTrades ?? backtest.totalTrades} total trade{(summary?.totalTrades ?? backtest.totalTrades) === 1 ? "" : "s"}
+                {" • "}{tradeRowsTotal} total trade{tradeRowsTotal === 1 ? "" : "s"}
                 {" · "}{summary?.buyCount ?? 0} BUY / {summary?.sellCount ?? 0} SELL{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
               </p>
               {/* ===== Buy/Sell/Total 统计卡片，第二行 ===== */}
@@ -357,7 +370,7 @@ export default function BacktestDetails() {
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">Total Trades</div>
-              <div className="mt-2 text-3xl font-bold text-gray-900">{summary?.totalTrades ?? backtest.totalTrades}</div>
+              <div className="mt-2 text-3xl font-bold text-gray-900">{tradeRowsTotal}</div>
               <div className="mt-1 text-xs text-gray-600">
                 {summary?.buyCount ?? 0}B / {summary?.sellCount ?? 0}S{(summary?.settledCount ?? 0) > 0 ? ` / ${summary.settledCount} settled` : ""}
               </div>
@@ -482,62 +495,60 @@ export default function BacktestDetails() {
             <BacktestChart trades={sortedTrades} priceSeries={selectedPriceSeries} />
           </div>
 
-          {/* Trade Summary */}
+          {/* Trade Summary — always tallied across ALL markets (boss requirement). When the
+              backtest spans multiple markets the panel still totals every row instead of just
+              the selected one in the chart above. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
               <div className="mb-4 flex items-baseline justify-between gap-2">
                 <h3 className="text-lg font-semibold text-gray-900">Trade Summary</h3>
                 <span className="text-[11px] uppercase tracking-wide text-gray-500">
-                  {markets.length > 1 ? "Selected market" : "This backtest"}
+                  All markets
                 </span>
                 {/*
-                  Trade Summary 字段与后端 summary 完全一致：
-                  - transactionCount: 总交易条数（与明细一一对应）
-                  - buyCount: 买入次数
-                  - sellCount: 卖出次数
-                  - winningCount: 盈利卖出次数
-                  - losingCount: 亏损卖出次数
-                  - breakevenCount: 盈亏为零的卖出次数
-                  如需“买卖配对”统计，请后端 trade 结构增加 transactionId 字段。
+                  Trade Summary 字段与后端 summary 完全一致（全部市场聚合）：
+                  - buyCount  : 全部市场买入次数 (e.g. 42B)
+                  - sellCount : 全部市场卖出次数 (e.g. 19S)
+                  - winningCount / losingCount / breakevenCount: 全部市场每个 BUY 仓位最终判定
+                  P/L 数字来自 overallPnlAttribution（全部市场的 SELL profit 累加）。
                 */}
               </div>
               <div className="space-y-3">
-                {/* Paired Trades removed as requested */}
-                {markets.length > 1 && (
-                  <div className="flex justify-between border-t border-gray-200 pt-3 text-xs">
-                    <span className="text-gray-500">All markets · closed trades</span>
-                    <span className="font-medium text-gray-700">
-                      {backtest.totalTrades} ({backtest.winningTrades}W / {backtest.losingTrades}L{overallBreakeven > 0 ? ` / ${overallBreakeven}BE` : ""})
-                    </span>
-                  </div>
-                )}
+                {/* All-markets row tally — always shown so single-market and multi-market
+                    backtests look consistent. Source: summary.buyCount + summary.sellCount. */}
+                <div className="flex justify-between border-t border-gray-200 pt-3 text-xs">
+                  <span className="text-gray-500">Trade rows</span>
+                  <span className="font-medium text-gray-700">
+                    {tradeRowsTotal} ({summary?.buyCount ?? 0}B / {summary?.sellCount ?? 0}S · {summary?.winningCount ?? backtest.winningTrades}W / {summary?.losingCount ?? backtest.losingTrades}L{(summary?.breakevenCount ?? overallBreakeven) > 0 ? ` / ${summary?.breakevenCount ?? overallBreakeven}BE` : ""})
+                  </span>
+                </div>
                 <div className="flex justify-between border-t border-gray-200 pt-3">
                   <span className="text-gray-600">Gains from winners</span>
-                  <span className="font-semibold text-emerald-600">+{formatCurrency(selectedPnlAttribution.grossGain)}</span>
+                  <span className="font-semibold text-emerald-600">+{formatCurrency(overallPnlAttribution.grossGain)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Losses from losers</span>
-                  <span className="font-semibold text-rose-600">{formatCurrency(selectedPnlAttribution.grossLoss)}</span>
+                  <span className="font-semibold text-rose-600">{formatCurrency(overallPnlAttribution.grossLoss)}</span>
                 </div>
                 <div className="flex justify-between text-sm border-t border-gray-100 pt-2">
                   <span className="text-gray-700 font-medium">= Net realized</span>
-                  <span className={`font-semibold ${selectedPnlAttribution.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                    {selectedPnlAttribution.netProfit >= 0 ? "+" : ""}{formatCurrency(selectedPnlAttribution.netProfit)}
+                  <span className={`font-semibold ${overallPnlAttribution.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                    {overallPnlAttribution.netProfit >= 0 ? "+" : ""}{formatCurrency(overallPnlAttribution.netProfit)}
                   </span>
                 </div>
-                {selectedPnlAttribution.biggestWin && (
+                {overallPnlAttribution.biggestWin && (
                   <div className="flex justify-between gap-2">
                     <span className="text-gray-600 truncate">Biggest winner</span>
-                    <span className="font-semibold text-emerald-600 text-right truncate" title={selectedPnlAttribution.biggestWin.marketName}>
-                      +{formatCurrency(selectedPnlAttribution.biggestWin.profit)}
+                    <span className="font-semibold text-emerald-600 text-right truncate" title={overallPnlAttribution.biggestWin.marketName}>
+                      +{formatCurrency(overallPnlAttribution.biggestWin.profit)}
                     </span>
                   </div>
                 )}
-                {selectedPnlAttribution.biggestLoss && (
+                {overallPnlAttribution.biggestLoss && (
                   <div className="flex justify-between gap-2">
                     <span className="text-gray-600 truncate">Biggest loser</span>
-                    <span className="font-semibold text-rose-600 text-right truncate" title={selectedPnlAttribution.biggestLoss.marketName}>
-                      {formatCurrency(selectedPnlAttribution.biggestLoss.profit)}
+                    <span className="font-semibold text-rose-600 text-right truncate" title={overallPnlAttribution.biggestLoss.marketName}>
+                      {formatCurrency(overallPnlAttribution.biggestLoss.profit)}
                     </span>
                   </div>
                 )}
