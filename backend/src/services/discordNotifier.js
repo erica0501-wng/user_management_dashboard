@@ -197,9 +197,13 @@ async function notifyBacktestCompleted({ groupName, strategyName, backtest, mark
     beField = 0
     winRateDisplay = Number(backtest.winRate || 0)
   }
-  const winLossValue = beField > 0
-    ? `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L \u00B7 ${fmtNum(beField)}BE`
-    : `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L`
+  const neutralField = sellCount
+  const winLossValue = (() => {
+    let s = `${fmtNum(winsField)}W \u00B7 ${fmtNum(lossesField)}L`
+    if (beField > 0) s += ` \u00B7 ${fmtNum(beField)}BE`
+    if (neutralField > 0) s += ` \u00B7 ${fmtNum(neutralField)}N`
+    return s
+  })()
 
   return postToDiscord({
     embeds: [{
