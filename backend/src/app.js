@@ -63,6 +63,10 @@ app.use("/polymarket", polymarketRoutes)
 app.use("/alerts", alertRoutes)
 app.use("/notifications", notificationRoutes)
 app.use("/autotrader", autotraderRoutes)
+
+// Register neutral trade log API
+const neutralSellLogRoutes = require('./routes/neutralSellLog');
+app.use('/api', neutralSellLogRoutes);
 console.log('✅ All routes loaded')
 
 /* ========================

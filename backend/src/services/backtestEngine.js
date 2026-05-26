@@ -1,5 +1,21 @@
 const prisma = require('../prisma');
 const discord = require('./discordNotifier');
+const fs = require('fs');
+const path = require('path');
+
+// Path to the neutral-trade log file (orphan SELLs + BREAKEVEN BUY positions).
+// Exposed via /api/neutral-sell-log so the dashboard / Discord digest can
+// observe how often these unactionable trades happen and why.
+const NEUTRAL_LOG_PATH = path.join(__dirname, '../../neutral_sell_log.jsonl');
+
+function appendNeutralLog(entry) {
+  try {
+    const line = JSON.stringify({ ...entry, iso: new Date(entry?.time || Date.now()).toISOString() });
+    fs.appendFileSync(NEUTRAL_LOG_PATH, line + '\n');
+  } catch (e) {
+    console.error('[NEUTRAL_LOG] failed to append:', e?.message || e);
+  }
+}
 
 function getPrimaryPrice(snapshot) {
   if (!snapshot) return 0;
@@ -9,108 +25,46 @@ function getPrimaryPrice(snapshot) {
     return Number.isFinite(value) ? value : 0;
   }
 
-  const outcomePrices = snapshot.outcomePrices || {};
-  const firstKey = Object.keys(outcomePrices)[0];
-  const value = Number(firstKey ? outcomePrices[firstKey] : 0.5);
-  return Number.isFinite(value) ? value : 0;
+  if (snapshot.price !== undefined && snapshot.price !== null) {
+    const value = Number(snapshot.price);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  return 0;
 }
 
+// Extract YES/NO outcome prices from a snapshot. Used by the per-market price
+// series so the frontend chart can render both legs. Falls back to primary
+// price when the snapshot is missing structured outcome data.
 function getYesNoPrices(snapshot) {
-  if (!snapshot) {
-    return { yesPrice: null, noPrice: null };
+  const result = { yesPrice: null, noPrice: null };
+  if (!snapshot) return result;
+  if (Array.isArray(snapshot.outcomePrices) && snapshot.outcomePrices.length > 0) {
+    const yes = Number(snapshot.outcomePrices[0]);
+    const no = snapshot.outcomePrices.length > 1
+      ? Number(snapshot.outcomePrices[1])
+      : (Number.isFinite(yes) ? 1 - yes : null);
+    result.yesPrice = Number.isFinite(yes) ? yes : null;
+    result.noPrice = Number.isFinite(no) ? no : null;
+    return result;
   }
-
-  const normalizeOutcomeLabel = (value) => String(value || '').trim().toLowerCase();
-
-  const toNumeric = (value) => {
-    const numberValue = Number(value);
-    return Number.isFinite(numberValue) && numberValue >= 0 && numberValue <= 1 ? numberValue : null;
-  };
-
-  const normalizeOutcomes = () => {
-    if (Array.isArray(snapshot.outcomes)) {
-      return snapshot.outcomes.map((item) => String(item || ''));
-    }
-
-    if (typeof snapshot.outcomes === 'string') {
-      try {
-        const parsed = JSON.parse(snapshot.outcomes);
-        return Array.isArray(parsed) ? parsed.map((item) => String(item || '')) : [];
-      } catch {
-        return [];
-      }
-    }
-
-    return [];
-  };
-
-  const outcomes = normalizeOutcomes();
-
-  if (Array.isArray(snapshot.outcomePrices)) {
-    const outcomePrices = snapshot.outcomePrices.map((value) => toNumeric(value));
-    const yesIndex = outcomes.findIndex((label) => normalizeOutcomeLabel(label) === 'yes');
-    const noIndex = outcomes.findIndex((label) => normalizeOutcomeLabel(label) === 'no');
-
-    const rawYes = yesIndex >= 0 ? outcomePrices[yesIndex] : outcomePrices[0];
-    const rawNo = noIndex >= 0 ? outcomePrices[noIndex] : outcomePrices[1];
-
-    const yesValue = rawYes;
-    const noValue = rawNo;
-
-    const completedYes = yesValue ?? (noValue !== null ? 1 - noValue : null);
-    const completedNo = noValue ?? (yesValue !== null ? 1 - yesValue : null);
-
-    return {
-      yesPrice: toNumeric(completedYes),
-      noPrice: toNumeric(completedNo),
-    };
+  const primary = getPrimaryPrice(snapshot);
+  if (Number.isFinite(primary) && primary > 0) {
+    result.yesPrice = primary;
+    result.noPrice = 1 - primary;
   }
-
-  const outcomePrices = snapshot.outcomePrices || {};
-  const keys = Object.keys(outcomePrices);
-  const lowerKeyMap = new Map(keys.map((key) => [normalizeOutcomeLabel(key), key]));
-
-  let yesValue = null;
-  let noValue = null;
-
-  if (lowerKeyMap.has('yes')) {
-    yesValue = toNumeric(outcomePrices[lowerKeyMap.get('yes')]);
-  }
-  if (lowerKeyMap.has('no')) {
-    noValue = toNumeric(outcomePrices[lowerKeyMap.get('no')]);
-  }
-
-  if (yesValue === null || noValue === null) {
-    const values = Object.values(outcomePrices).map((value) => toNumeric(value));
-    const fallbackYes = yesValue ?? values[0] ?? null;
-    const fallbackNo = noValue ?? values[1] ?? null;
-    yesValue = fallbackYes;
-    noValue = fallbackNo;
-  }
-
-  const completedYes = yesValue ?? (noValue !== null ? 1 - noValue : null);
-  const completedNo = noValue ?? (yesValue !== null ? 1 - yesValue : null);
-
-  return {
-    yesPrice: toNumeric(completedYes),
-    noPrice: toNumeric(completedNo),
-  };
+  return result;
 }
 
-/**
- * Built-in trading strategies
- */
+// === 策略对象定义开始 ===
 const STRATEGIES = {
-  /**
-   * Momentum strategy: Buy when price is moving up, sell when moving down
-   */
   momentum: {
     name: 'Momentum Strategy',
-    description: 'Trades based on price momentum',
+    description: 'Buys on upward price momentum, sells on downward momentum',
     defaultParams: {
-      buyThreshold: 0.005,     // Buy when price rises 0.5% (adjusted for low-volatility markets)
-      sellThreshold: 0.005,    // Sell when price drops 0.5%
-      positionSize: 1000       // Position size per trade
+      buyThreshold: 0.02,   // +2% tick-over-tick return → BUY
+      sellThreshold: 0.02,  // -2% tick-over-tick return → SELL
+      positionSize: 1000
     },
     execute: function(prev, current, params) {
       if (!prev || !current) return { action: 'HOLD' };
@@ -118,40 +72,37 @@ const STRATEGIES = {
 
       const prevPrice = getPrimaryPrice(prev);
       const currPrice = getPrimaryPrice(current);
-
       if (prevPrice <= 0 || currPrice <= 0) return { action: 'HOLD' };
-      
-      const priceMomentum = (currPrice - prevPrice) / prevPrice;
-      
-      if (priceMomentum > params.buyThreshold) {
-        return { 
-          action: 'BUY', 
-          amount: params.positionSize, 
+
+      const ret = (currPrice - prevPrice) / prevPrice;
+
+      if (ret >= params.buyThreshold) {
+        return {
+          action: 'BUY',
+          amount: params.positionSize,
           price: currPrice,
-          signal: `Price momentum +${(priceMomentum * 100).toFixed(2)}%`
+          signal: `Upward momentum +${(ret * 100).toFixed(2)}%`
         };
-      } else if (priceMomentum < -params.sellThreshold) {
-        return { 
-          action: 'SELL', 
-          amount: params.positionSize, 
+      }
+      if (ret <= -params.sellThreshold) {
+        return {
+          action: 'SELL',
+          amount: params.positionSize,
           price: currPrice,
-          signal: `Price momentum ${(priceMomentum * 100).toFixed(2)}%`
+          signal: `Downward momentum ${(ret * 100).toFixed(2)}%`
         };
       }
       return { action: 'HOLD' };
     }
   },
 
-  /**
-   * Mean Reversion: Buy when price is low, sell when price is high
-   */
   meanReversion: {
     name: 'Mean Reversion Strategy',
-    description: 'Trades based on mean reversion principle',
+    description: 'Buys when price is in a low percentile of its recent range, sells when high',
     defaultParams: {
-      period: 10,              // 10-period lookback (adjusted from 20 for more responsive signals)
-      buyThreshold: 0.4,       // Buy when price in bottom 40% (adjusted from 30%)
-      sellThreshold: 0.6,      // Sell when price in top 60% (adjusted from 70%)
+      period: 10,
+      buyThreshold: 0.4,
+      sellThreshold: 0.6,
       positionSize: 1000
     },
     execute: function(history, current, params) {
@@ -820,12 +771,8 @@ async function getBestBacktest(groupName) {
 }
 
 function buildFallbackMarketImage(question, category, marketId) {
-  const label = String(question || category || `Market ${marketId}`)
-    .trim()
-    .slice(0, 80)
-    .replace(/\s+/g, ' ');
-
-  return `https://via.placeholder.com/1200x400.png?text=${encodeURIComponent(label || 'Polymarket Market')}`;
+  // Use a local static image to avoid external loading errors
+  return '/default-market.png';
 }
 
 async function fetchMarketMetadata(marketId) {
@@ -894,20 +841,34 @@ async function getBacktestReport(backtestId) {
   });
 
   if (!backtest) {
+    console.warn(`[getBacktestReport] Backtest id=${id} not found`);
     return null;
   }
 
-  let tradeHistory = normalizeTradeHistory(backtest.tradeHistory);
+  // tradeHistory 健壮性校验
+  if (!Array.isArray(backtest.tradeHistory)) {
+    console.warn(`[getBacktestReport] Backtest id=${id} tradeHistory is not array or missing`, backtest.tradeHistory);
+    // 兼容历史脏数据，直接返回 404
+    return null;
+  }
+
+  let tradeHistory;
+  try {
+    tradeHistory = normalizeTradeHistory(backtest.tradeHistory);
+  } catch (e) {
+    console.error(`[getBacktestReport] normalizeTradeHistory failed for id=${id}:`, e);
+    return null;
+  }
   // Ensure all trades have transactionId,和兜底分配
   let missingTxIdCount = 0;
-    tradeHistory = tradeHistory.map((trade, idx) => {
-      if (!trade.transactionId || typeof trade.transactionId !== 'string' || !trade.transactionId.trim()) {
-        missingTxIdCount++;
-        // 兜底分配唯一 transactionId
-        return { ...trade, transactionId: `${trade.marketId || 'M'}_AUTO_${Date.now()}_${idx}` };
-      }
-      return trade;
-    });
+  tradeHistory = tradeHistory.map((trade, idx) => {
+    if (!trade.transactionId || typeof trade.transactionId !== 'string' || !trade.transactionId.trim()) {
+      missingTxIdCount++;
+      // 兜底分配唯一 transactionId
+      return { ...trade, transactionId: `${trade.marketId || 'M'}_AUTO_${Date.now()}_${idx}` };
+    }
+    return trade;
+  });
   // 日志：输出 tradeHistory 长度和部分内容
   console.log('[DEBUG] tradeHistory.length:', tradeHistory.length);
   if (tradeHistory.length > 0) {
@@ -1115,6 +1076,7 @@ async function getBacktestReport(backtestId) {
         };
         sellPairingByIndex.set(t.__idx, sellInfo);
 
+        // FIFO-match this SELL against open BUY lots on the same market.
         let remainingSell = tShares;
         while (remainingSell > 1e-9 && openLots.length > 0) {
           const lot = openLots[0];
@@ -1147,8 +1109,45 @@ async function getBacktestReport(backtestId) {
         }
 
         sellInfo.profit = sellInfo.proceeds - sellInfo.matchedCost;
-        // (Any oversell shares with no matching BUY are ignored — engine
-        //  should never emit that, but we don't crash if it does.)
+        sellInfo.unmatchedShares = Math.max(0, tShares - sellInfo.matchedShares);
+
+        // ==== Neutral logging — orphan / partially-orphan SELL ====
+        // A SELL whose shares cannot be matched to an earlier BUY is usually
+        // not executable in the real market (oversell / lookback artifact).
+        // We log it with full timestamps + signal so the dashboard and the
+        // daily auto-backtest digest can quantify how often this happens.
+        if (sellInfo.unmatchedShares > 1e-9) {
+          const matchedBuys = sellInfo.matchedBuyIndexes.map((buyIdx) => {
+            const buyTrade = list.find((x) => x.__idx === buyIdx);
+            return {
+              buyIdx,
+              time: buyTrade?.time || null,
+              price: buyTrade ? Number(buyTrade.price || 0) : null,
+              signal: buyTrade?.signal || null,
+            };
+          });
+          appendNeutralLog({
+            type: 'NEUTRAL_SELL',
+            category: 'ORPHAN_SELL',
+            backtestId: backtest.id,
+            strategy: backtest.strategyName || null,
+            groupName: backtest.group?.name || null,
+            marketId: mid,
+            tradeIdx: t.__idx,
+            time: t?.time || null,
+            sellTime: t?.time || null,
+            sellPrice: tPrice,
+            sellShares: tShares,
+            sellSignal: t?.signal || null,
+            matchedShares: sellInfo.matchedShares,
+            unmatchedShares: sellInfo.unmatchedShares,
+            matchedBuyIndexes: sellInfo.matchedBuyIndexes,
+            matchedBuys,
+            reason: sellInfo.matchedShares > 0
+              ? `Partial match — ${sellInfo.unmatchedShares.toFixed(4)} shares had no BUY (oversell)`
+              : 'No matching BUY (oversell or orphan SELL)',
+          });
+        }
       }
     }
 
@@ -1174,7 +1173,7 @@ async function getBacktestReport(backtestId) {
   }
 
   // Finalize per-BUY outcomes (profit, outcome label, status).
-  for (const buyOut of buyOutcomeByIndex.values()) {
+  for (const [buyIdx, buyOut] of buyOutcomeByIndex.entries()) {
     buyOut.profit = buyOut.proceeds - buyOut.entryCost;
     if (buyOut.profit > 1e-6) buyOut.outcome = 'WIN';
     else if (buyOut.profit < -1e-6) buyOut.outcome = 'LOSS';
@@ -1185,6 +1184,58 @@ async function getBacktestReport(backtestId) {
     else buyOut.status = 'PARTIAL_SELL_SETTLED';
 
     buyOut.avgExitPrice = buyOut.entryShares > 0 ? buyOut.proceeds / buyOut.entryShares : 0;
+
+    // ==== Neutral logging — BREAKEVEN BUY positions ====
+    // A BUY whose realized P&L is ~0 across all exits is "neutral" — often a
+    // synthetic round-trip the strategy fired but that would not have been
+    // worth executing in the real market. We log it with full entry/exit
+    // timing + signals so the digest can report frequency and root cause.
+    if (buyOut.outcome === 'BREAKEVEN') {
+      const buyTrade = tradeHistory[buyIdx] || null;
+      const exits = (buyOut.exits || []).map((ex) => ({
+        time: ex?.time || null,
+        price: Number(ex?.price || 0),
+        shares: Number(ex?.shares || 0),
+        type: ex?.type || null,
+      }));
+      const firstExit = exits[0] || null;
+      const lastExit = exits[exits.length - 1] || null;
+      const buyTimeMs = buyTrade?.time ? new Date(buyTrade.time).getTime() : null;
+      const firstExitMs = firstExit?.time ? new Date(firstExit.time).getTime() : null;
+      const lastExitMs = lastExit?.time ? new Date(lastExit.time).getTime() : null;
+      appendNeutralLog({
+        type: 'NEUTRAL_BUY',
+        category: 'BREAKEVEN',
+        backtestId: backtest.id,
+        strategy: backtest.strategyName || null,
+        groupName: backtest.group?.name || null,
+        marketId: String(buyTrade?.marketId || ''),
+        tradeIdx: buyIdx,
+        time: buyTrade?.time || null,
+        buyTime: buyTrade?.time || null,
+        buyPrice: Number(buyTrade?.price || 0),
+        buyShares: Number(buyTrade?.shares || 0),
+        buySignal: buyTrade?.signal || null,
+        entryCost: buyOut.entryCost,
+        proceeds: buyOut.proceeds,
+        profit: buyOut.profit,
+        avgExitPrice: buyOut.avgExitPrice,
+        status: buyOut.status,
+        sharesSold: buyOut.sharesSold,
+        sharesSettled: buyOut.sharesSettled,
+        settlePrice: buyOut.settlePrice,
+        exits,
+        firstExitTime: firstExit?.time || null,
+        lastExitTime: lastExit?.time || null,
+        holdingMsToFirstExit: buyTimeMs != null && firstExitMs != null ? firstExitMs - buyTimeMs : null,
+        holdingMsToLastExit: buyTimeMs != null && lastExitMs != null ? lastExitMs - buyTimeMs : null,
+        reason: buyOut.status === 'SETTLED_AT_CLOSE'
+          ? 'Position never sold — settled at close at entry price (no real P&L)'
+          : buyOut.status === 'PARTIAL_SELL_SETTLED'
+          ? 'Partial sell + close settlement netted to zero'
+          : 'Round-trip BUY+SELL netted to zero (likely same-tick / no-edge trade)',
+      });
+    }
   }
 
   const trades = tradeHistory.map((trade, index) => {
@@ -1316,6 +1367,7 @@ async function getBacktestReport(backtestId) {
     trades
   };
 }
+
 
 /**
  * Plan up to `maxRuns` (group, strategy) combinations to run, rotating

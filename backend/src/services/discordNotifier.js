@@ -249,24 +249,42 @@ async function notifyPastEventArchived({ marketId, question, category, closedTim
 }
 
 /** Daily digest: sent once per day with totals. */
-async function notifyDailyDigest({ archivedMarketsToday, archivedClosedMarketsToday, backtestsToday, topGroups }) {
+async function notifyDailyDigest({ archivedMarketsToday, archivedClosedMarketsToday, backtestsToday, topGroups, neutralStats }) {
   if (!isEnabled("DISCORD_NOTIFY_DAILY_DIGEST")) return { skipped: true }
 
   const groupLines = (topGroups || [])
     .map(g => `• **${g.name}**: ${fmtNum(g.count)} markets`)
     .join("\n") || "—"
 
+  const fields = [
+    { name: "Markets archived today", value: fmtNum(archivedMarketsToday), inline: true },
+    { name: "Closed (past events) today", value: fmtNum(archivedClosedMarketsToday), inline: true },
+    { name: "Backtests run today", value: fmtNum(backtestsToday), inline: true },
+    { name: "Top groups by market count", value: groupLines, inline: false },
+  ]
+
+  if (neutralStats && neutralStats.total > 0) {
+    const byCat = neutralStats.byCategory || {}
+    const orphan = Number(byCat.ORPHAN_SELL || 0)
+    const breakeven = Number(byCat.BREAKEVEN || 0)
+    const topReasons = Object.entries(neutralStats.byReason || {})
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([r, n]) => `• ${n}× ${String(r).slice(0, 120)}`)
+      .join("\n") || "—"
+    fields.push({
+      name: "⚠️ Neutral trades (last 24h)",
+      value: `${fmtNum(neutralStats.total)} total · ${fmtNum(orphan)} orphan-SELL · ${fmtNum(breakeven)} breakeven (across ${fmtNum(neutralStats.uniqueBacktests || 0)} backtests)\n${topReasons}`,
+      inline: false,
+    })
+  }
+
   return postToDiscord({
     embeds: [{
       title: "📅 Polymarket daily digest",
       color: 0x9B59B6,
       timestamp: new Date().toISOString(),
-      fields: [
-        { name: "Markets archived today", value: fmtNum(archivedMarketsToday), inline: true },
-        { name: "Closed (past events) today", value: fmtNum(archivedClosedMarketsToday), inline: true },
-        { name: "Backtests run today", value: fmtNum(backtestsToday), inline: true },
-        { name: "Top groups by market count", value: groupLines, inline: false },
-      ],
+      fields,
     }],
   })
 }

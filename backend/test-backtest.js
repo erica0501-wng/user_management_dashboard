@@ -80,42 +80,85 @@ async function main() {
 
     // Step 7: Run backtest if we have data
     if (backtestData.snapshotCount >= 2) {
-      console.log('🏃 Step 6: Running momentum strategy backtest...');
+      console.log('🏃 Step 6: Running meanReversion strategy backtest...');
       const testGroup = groupWithData?.name || 'Test Group';
-      
-      const results = await backtestEngine.runBacktest(
-        testGroup,
-        'momentum',
-        {
-          buyThreshold: 0.01,
-          sellThreshold: 0.01,
-          positionSize: 500
-        },
-        { startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      );
+      // 自动获取第一个 marketId
+      // 自动遍历所有 marketId，直到找到能产出交易的 market
+      let found = false;
+      if (groupWithData && groupWithData.markets && groupWithData.markets.length > 0) {
+        for (const m of groupWithData.markets) {
+          const marketId = typeof m === 'string' ? m : (m && m.id ? m.id : null);
+          if (!marketId) continue;
+          try {
+            const results = await backtestEngine.runBacktest(
+              testGroup,
+              'meanReversion',
+              {
+                period: 10,
+                buyThreshold: 0.4,
+                sellThreshold: 0.6,
+                positionSize: 500
+              },
+              {
+                startTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 拉长窗口
+                marketId
+              }
+            );
+            if (results && results.totalTrades > 0) {
+              found = true;
+              console.log(`\n✅ Found active marketId: ${marketId}`);
+              console.log('\n📊 Backtest Results Summary:');
+              console.log(`  Backtest ID: ${results.backtestId}`);
+              console.log(`  ROI: ${results.roi.toFixed(2)}%`);
+              console.log(`  Total Trades: ${results.totalTrades}`);
+              console.log(`  Win Rate: ${results.winRate.toFixed(2)}%`);
+              console.log(`  Profit Factor: ${results.metrics.profitFactor.toFixed(2)}`);
+              console.log(`  Sharpe Ratio: ${results.metrics.sharpeRatio.toFixed(2)}\n`);
 
-      console.log('\n📊 Backtest Results Summary:');
-      console.log(`  Backtest ID: ${results.backtestId}`);
-      console.log(`  ROI: ${results.roi.toFixed(2)}%`);
-      console.log(`  Total Trades: ${results.totalTrades}`);
-      console.log(`  Win Rate: ${results.winRate.toFixed(2)}%`);
-      console.log(`  Profit Factor: ${results.metrics.profitFactor.toFixed(2)}`);
-      console.log(`  Sharpe Ratio: ${results.metrics.sharpeRatio.toFixed(2)}\n`);
+              // Step 8: Retrieve saved results
+              console.log('📈 Step 7: Retrieving saved backtest results...');
+              const savedResults = await backtestEngine.getBacktestResults(testGroup, 5);
+              console.log(`✅ Found ${savedResults.length} saved backtests for "${testGroup}"\n`);
 
-      // Step 8: Retrieve saved results
-      console.log('📈 Step 7: Retrieving saved backtest results...');
-      const savedResults = await backtestEngine.getBacktestResults(testGroup, 5);
-      console.log(`✅ Found ${savedResults.length} saved backtests for "${testGroup}"\n`);
+              // Step 8b: Trigger getBacktestReport so neutral_sell_log.jsonl gets populated.
+              console.log('🧾 Step 7b: Generating backtest report (writes neutral_sell_log.jsonl if applicable)...');
+              try {
+                const report = await backtestEngine.getBacktestReport(results.backtestId);
+                const buyTrades = (report?.trades || []).filter(t => String(t.action).toUpperCase() === 'BUY');
+                const breakeven = buyTrades.filter(t => t.positionOutcome === 'BREAKEVEN').length;
+                console.log(`  Report OK · ${buyTrades.length} BUY positions · ${breakeven} BREAKEVEN`);
+              } catch (e) {
+                console.log('  Report failed:', e.message || e);
+              }
+              console.log('');
 
-      // Step 9: Get best backtest
-      console.log('🏆 Step 8: Getting best performing backtest...');
-      const bestBacktest = await backtestEngine.getBestBacktest(testGroup);
-      if (bestBacktest) {
-        console.log(`  Strategy: ${bestBacktest.strategyName}`);
-        console.log(`  ROI: ${bestBacktest.roi.toFixed(2)}%`);
-        console.log(`  Win Rate: ${bestBacktest.winRate.toFixed(2)}%\n`);
-      } else {
-        console.log('  No backtests found\n');
+              // Step 9: Get best backtest
+              console.log('🏆 Step 8: Getting best performing backtest...');
+              const bestBacktest = await backtestEngine.getBestBacktest(testGroup);
+              if (bestBacktest) {
+                console.log(`  Strategy: ${bestBacktest.strategyName}`);
+                console.log(`  ROI: ${bestBacktest.roi.toFixed(2)}%`);
+                console.log(`  Win Rate: ${bestBacktest.winRate.toFixed(2)}%\n`);
+              } else {
+                console.log('  No backtests found\n');
+              }
+              break;
+            } else {
+              console.log(`MarketId ${marketId} produced 0 trades, trying next...`);
+            }
+          } catch (err) {
+            if (err && err.code === 'BACKTEST_NO_TRADES') {
+              console.log(`MarketId ${marketId} produced 0 trades, trying next...`);
+              continue;
+            } else {
+              console.log(`Error running backtest for marketId ${marketId}:`, err.message || err);
+              continue;
+            }
+          }
+        }
+      }
+      if (!found) {
+        console.log('❌ 未找到任何能产出交易的 marketId，建议检查市场数据或调整参数。');
       }
     } else {
       console.log('⚠️  Skipping backtest - insufficient data\n');

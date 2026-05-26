@@ -47,6 +47,11 @@ export default function BacktestDetails() {
   const [report, setReport] = useState(null)
   const [selectedMarketId, setSelectedMarketId] = useState("")
     const [tradeFilter, setTradeFilter] = useState("ALL") // ALL, BUY, SELL
+  const [neutralEntries, setNeutralEntries] = useState([])
+  const [neutralLoading, setNeutralLoading] = useState(false)
+  const [neutralError, setNeutralError] = useState("")
+  const [excludeNeutral, setExcludeNeutral] = useState(false)
+  const [showNeutralPanel, setShowNeutralPanel] = useState(true)
 
   useEffect(() => {
     const loadBacktestReport = async () => {
@@ -66,6 +71,40 @@ export default function BacktestDetails() {
     if (backtestId) {
       loadBacktestReport()
     }
+  }, [backtestId])
+
+  // Fetch neutral-trade audit log for this backtest (boss requirement: confirm
+  // buy/sell timestamps for neutral trades and observe how often + why they
+  // happen). Backend route: /api/neutral-sell-log?backtestId=…
+  useEffect(() => {
+    if (!backtestId) return
+    let cancelled = false
+    const loadNeutral = async () => {
+      try {
+        setNeutralLoading(true)
+        setNeutralError("")
+        const resp = await fetch(`${API_BASE}/api/neutral-sell-log?backtestId=${encodeURIComponent(backtestId)}`)
+        if (!resp.ok) {
+          // 404 just means no neutral trades have been logged yet — that's fine.
+          if (resp.status === 404) {
+            if (!cancelled) setNeutralEntries([])
+            return
+          }
+          throw new Error(`HTTP ${resp.status}`)
+        }
+        const json = await resp.json()
+        if (!cancelled) setNeutralEntries(Array.isArray(json?.data) ? json.data : [])
+      } catch (err) {
+        if (!cancelled) {
+          setNeutralError(String(err?.message || err))
+          setNeutralEntries([])
+        }
+      } finally {
+        if (!cancelled) setNeutralLoading(false)
+      }
+    }
+    loadNeutral()
+    return () => { cancelled = true }
   }, [backtestId])
 
   useEffect(() => {
@@ -229,6 +268,46 @@ export default function BacktestDetails() {
   }
 
   const overallPnlAttribution = buildPnlAttribution(trades)
+
+  // Neutral-trade audit (boss requirement): split orphan SELLs from breakeven
+  // BUYs, derive a holding-time histogram, and (when `excludeNeutral` is on)
+  // compute an "exclude-neutral" view of P&L + win rate so the user can see
+  // what the strategy looks like once unactionable trades are filtered out.
+  const neutralOrphanSells = neutralEntries.filter((e) => e?.category === "ORPHAN_SELL")
+  const neutralBreakevens = neutralEntries.filter((e) => e?.category === "BREAKEVEN")
+  const neutralOrphanProfit = neutralOrphanSells.reduce((sum, e) => {
+    const proceeds = Number(e?.matchedShares || 0) * Number(e?.sellPrice || 0)
+    return sum + proceeds // proceeds attributed to this orphan SELL row
+  }, 0)
+  const neutralStrategyCounts = neutralEntries.reduce((acc, e) => {
+    const k = `${e?.category || "?"} · ${e?.strategy || "unknown"}`
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {})
+  const neutralReasonCounts = neutralEntries.reduce((acc, e) => {
+    const k = e?.reason || "unspecified"
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {})
+  // Derived "exclude neutral" metrics. We keep the original numbers intact and
+  // only surface these as an alternative view next to the toggle.
+  const breakevenBuyIdxSet = new Set(neutralBreakevens.map((e) => Number(e?.tradeIdx)).filter((n) => Number.isFinite(n)))
+  const orphanSellIdxSet = new Set(neutralOrphanSells.map((e) => Number(e?.tradeIdx)).filter((n) => Number.isFinite(n)))
+  const filteredTradesForMetrics = (trades || []).filter((t, idx) => {
+    // Trades are returned in original order with `index` = idx+1, so trade.index-1 lines up.
+    const rowIdx = Number(t?.index) - 1
+    if (Number.isFinite(rowIdx) && (breakevenBuyIdxSet.has(rowIdx) || orphanSellIdxSet.has(rowIdx))) return false
+    return true
+  })
+  const filteredBuyTrades = filteredTradesForMetrics.filter((t) => String(t.action).toUpperCase() === "BUY")
+  const filteredWins = filteredBuyTrades.filter((t) => t.positionOutcome === "WIN").length
+  const filteredLosses = filteredBuyTrades.filter((t) => t.positionOutcome === "LOSS").length
+  const filteredDecisive = filteredWins + filteredLosses
+  const excludedWinRate = filteredDecisive > 0 ? (filteredWins / filteredDecisive) * 100 : 0
+  const excludedNetPnl = filteredBuyTrades.reduce((sum, t) => sum + Number(t.positionProfit || 0), 0)
+  const headlineWinRate = excludeNeutral ? excludedWinRate : Number(backtest?.winRate || 0)
+  const headlinePnl = excludeNeutral ? excludedNetPnl : Number(backtest?.pnl || 0)
+
   const selectedMarket = markets.find((market) => String(market.marketId) === String(selectedMarketId)) || null
   const marketCard = selectedMarket || markets[0] || null
   const selectedTrades = (trades || []).filter((trade) => String(trade.marketId) === String(selectedMarketId))
@@ -373,9 +452,12 @@ export default function BacktestDetails() {
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">Win Rate</div>
-              <div className={`mt-2 text-3xl font-bold ${winRateColor(backtest.winRate)}`}>
-                {formatPercent(backtest.winRate)}
+              <div className={`mt-2 text-3xl font-bold ${winRateColor(headlineWinRate)}`}>
+                {formatPercent(headlineWinRate)}
               </div>
+              {excludeNeutral && (
+                <div className="mt-1 text-[11px] text-amber-700">excl. neutral</div>
+              )}
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">Total Trades</div>
@@ -391,9 +473,12 @@ export default function BacktestDetails() {
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">P&L</div>
-              <div className={`mt-2 text-3xl font-bold ${backtest.pnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                {formatCurrency(backtest.pnl)}
+              <div className={`mt-2 text-3xl font-bold ${headlinePnl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                {formatCurrency(headlinePnl)}
               </div>
+              {excludeNeutral && (
+                <div className="mt-1 text-[11px] text-amber-700">excl. neutral</div>
+              )}
             </div>
             <div className="rounded-2xl bg-white px-6 py-4 shadow-sm">
               <div className="text-xs font-semibold text-gray-600 uppercase">Max Drawdown</div>
@@ -401,6 +486,177 @@ export default function BacktestDetails() {
                 {formatPercent(-Math.abs(backtest.maxDrawdown))}
               </div>
             </div>
+          </div>
+
+          {/* Neutral-trade audit (boss requirement). Lists ORPHAN_SELL rows
+              (sells that had no matching open BUY — likely not actionable
+              in real trading) and BREAKEVEN BUY positions (closed at exactly
+              the entry price). The toggle lets the user reweigh win-rate and
+              P&L without these unactionable trades. */}
+          <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">⚠️ Neutral Trade Audit</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Confirms when buy/sell happened for trades the engine resolved as neutral
+                  (orphan SELLs and breakeven BUY positions).
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={excludeNeutral}
+                    onChange={(e) => setExcludeNeutral(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  Exclude neutral trades
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowNeutralPanel((v) => !v)}
+                  className="rounded-lg border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  {showNeutralPanel ? "Hide" : "Show"} details
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-xl border border-gray-200 px-3 py-2">
+                <div className="text-[11px] uppercase text-gray-500">Total neutral</div>
+                <div className="text-xl font-semibold text-gray-900">{neutralEntries.length}</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-3 py-2">
+                <div className="text-[11px] uppercase text-gray-500">Orphan SELLs</div>
+                <div className="text-xl font-semibold text-amber-700">{neutralOrphanSells.length}</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-3 py-2">
+                <div className="text-[11px] uppercase text-gray-500">Breakeven BUYs</div>
+                <div className="text-xl font-semibold text-amber-700">{neutralBreakevens.length}</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-3 py-2">
+                <div className="text-[11px] uppercase text-gray-500">Orphan SELL proceeds</div>
+                <div className="text-xl font-semibold text-gray-900">{formatCurrency(neutralOrphanProfit)}</div>
+              </div>
+            </div>
+
+            {excludeNeutral && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                With neutral trades excluded: <span className="font-semibold">{filteredBuyTrades.length}</span> BUY positions
+                · <span className="font-semibold">{filteredWins}W / {filteredLosses}L</span>
+                · win rate <span className="font-semibold">{formatPercent(excludedWinRate)}</span>
+                · realized P&L <span className="font-semibold">{formatCurrency(excludedNetPnl)}</span>
+              </div>
+            )}
+
+            {neutralLoading && (
+              <div className="text-sm text-gray-500">Loading neutral-trade log…</div>
+            )}
+            {neutralError && (
+              <div className="text-sm text-rose-600">Failed to load: {neutralError}</div>
+            )}
+            {!neutralLoading && !neutralError && neutralEntries.length === 0 && (
+              <div className="text-sm text-emerald-700">✓ No neutral trades logged for this backtest.</div>
+            )}
+
+            {showNeutralPanel && neutralEntries.length > 0 && (
+              <div className="space-y-4">
+                {Object.keys(neutralReasonCounts).length > 0 && (
+                  <div className="rounded-xl border border-gray-200 px-3 py-2">
+                    <div className="text-[11px] uppercase text-gray-500 mb-2">Top reasons</div>
+                    <ul className="space-y-1 text-xs text-gray-700">
+                      {Object.entries(neutralReasonCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 5)
+                        .map(([reason, count]) => (
+                          <li key={reason} className="flex justify-between gap-2">
+                            <span className="truncate" title={reason}>{reason}</span>
+                            <span className="font-semibold text-gray-900">{count}×</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600 uppercase">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Type</th>
+                        <th className="px-3 py-2 text-left">Market</th>
+                        <th className="px-3 py-2 text-left">BUY time</th>
+                        <th className="px-3 py-2 text-left">SELL / exit time</th>
+                        <th className="px-3 py-2 text-left">Holding</th>
+                        <th className="px-3 py-2 text-left">Signal</th>
+                        <th className="px-3 py-2 text-left">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {neutralEntries.slice(0, 50).map((e, i) => {
+                        const isOrphan = e.category === "ORPHAN_SELL"
+                        const buyTime = isOrphan
+                          ? (e.matchedBuys?.[0]?.time || null)
+                          : (e.buyTime || null)
+                        const exitTime = isOrphan
+                          ? e.sellTime
+                          : (e.firstExitTime || e.lastExitTime || null)
+                        const holdingMs = isOrphan
+                          ? (buyTime && exitTime ? new Date(exitTime).getTime() - new Date(buyTime).getTime() : null)
+                          : (Number.isFinite(e.holdingMsToFirstExit) ? e.holdingMsToFirstExit : null)
+                        const holdingLabel = (() => {
+                          if (holdingMs == null) return "—"
+                          if (holdingMs < 1000) return "<1s"
+                          if (holdingMs < 60000) return `${Math.round(holdingMs / 1000)}s`
+                          if (holdingMs < 3600000) return `${Math.round(holdingMs / 60000)}m`
+                          if (holdingMs < 86400000) return `${(holdingMs / 3600000).toFixed(1)}h`
+                          return `${(holdingMs / 86400000).toFixed(1)}d`
+                        })()
+                        const signal = isOrphan ? e.sellSignal : (e.exits?.[0]?.signal || e.buySignal)
+                        return (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2">
+                              <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold ${isOrphan ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                                {isOrphan ? "ORPHAN SELL" : "BREAKEVEN"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-gray-600 truncate max-w-[140px]" title={e.marketId}>
+                              {e.marketId}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatTradeTime(buyTime)}</td>
+                            <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatTradeTime(exitTime)}</td>
+                            <td className="px-3 py-2 text-gray-700">{holdingLabel}</td>
+                            <td className="px-3 py-2 text-gray-600 truncate max-w-[160px]" title={signal || ""}>{signal || "—"}</td>
+                            <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]" title={e.reason || ""}>{e.reason || "—"}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  {neutralEntries.length > 50 && (
+                    <div className="bg-gray-50 px-3 py-2 text-[11px] text-gray-500 text-center">
+                      Showing first 50 of {neutralEntries.length} entries.
+                    </div>
+                  )}
+                </div>
+
+                {Object.keys(neutralStrategyCounts).length > 0 && (
+                  <div className="rounded-xl border border-gray-200 px-3 py-2">
+                    <div className="text-[11px] uppercase text-gray-500 mb-2">By type · strategy</div>
+                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700">
+                      {Object.entries(neutralStrategyCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([key, count]) => (
+                          <li key={key} className="flex justify-between gap-2">
+                            <span className="truncate" title={key}>{key}</span>
+                            <span className="font-semibold text-gray-900">{count}×</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Price Chart */}
