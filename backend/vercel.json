@@ -24,5 +24,10 @@
       "path": "/polymarket/backtest/auto-run?maxRuns=12&groups=Elon%20Tweets,Economic%20Policy,NBA,Movies",
       "schedule": "30 13 * * *"
     }
+    ,
+    {
+      "path": "/polymarket/backtest/auto-run?maxRuns=12&groups=Elon%20Tweets,Economic%20Policy,NBA,Movies",
+      "schedule": "0 14 * * *"
+    }
   ]
 }
