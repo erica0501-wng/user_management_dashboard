@@ -2,7 +2,15 @@ import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import BacktestChart from "../components/BacktestChart"
+import EquityCurveChart from "../components/EquityCurveChart"
 import { getPolymarketEventUrl, getPolymarketMarketMeta } from "../utils/polymarketMarketMeta"
+import {
+  computeAdvancedMetrics,
+  formatDuration,
+  formatRatio,
+  tradesToCsv,
+  downloadFile,
+} from "../utils/backtestMetrics"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -389,6 +397,23 @@ export default function BacktestDetails() {
   const selectedPriceSeries = Array.isArray(report.marketPriceSeries?.[String(selectedMarketId)])
     ? report.marketPriceSeries[String(selectedMarketId)]
     : []
+
+  // Advanced metrics derived client-side from the trade rows — gives users
+  // Sharpe/Sortino/Profit Factor/Expectancy/avg holding time without any
+  // backend changes. Recomputed whenever trades or capital change.
+  const advancedMetrics = computeAdvancedMetrics(trades, backtest?.initialCapital)
+
+  const handleExportCsv = () => {
+    const csv = tradesToCsv(trades)
+    downloadFile(`backtest-${backtest?.id || backtestId}-trades.csv`, csv, "text/csv;charset=utf-8")
+  }
+  const handleExportJson = () => {
+    const payload = JSON.stringify({ report, advancedMetrics }, null, 2)
+    downloadFile(`backtest-${backtest?.id || backtestId}-report.json`, payload, "application/json")
+  }
+  const handlePrintReport = () => {
+    if (typeof window !== "undefined") window.print()
+  }
   const selectedMarketMeta = getPolymarketMarketMeta(selectedMarket || {}, "Historical backtest market")
   const chartImage = getMarketHeroImage(marketCard || markets[0] || null)
   const chartTitle = selectedMarketMeta.displayName
@@ -404,12 +429,43 @@ export default function BacktestDetails() {
           <div className="mx-auto max-w-7xl space-y-6">
             {/* Header */}
             <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
-              <button
-                onClick={() => navigate("/polymarket/backtest")}
-                className="mb-4 text-blue-600 hover:text-blue-700 font-medium"
-              >
-                ← Back to Results
-              </button>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  onClick={() => navigate("/polymarket/backtest")}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  ← Back to Results
+                </button>
+                {/* Export / print actions. CSV exports trade rows, JSON exports the
+                    full report + derived metrics, Print opens the browser dialog
+                    so users can save the page as PDF. All purely client-side. */}
+                <div className="flex flex-wrap items-center gap-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    title="Download all trade rows as CSV"
+                  >
+                    ⬇ Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportJson}
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    title="Download the full backtest report as JSON"
+                  >
+                    ⬇ Export JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintReport}
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    title="Open the browser print dialog (Save as PDF)"
+                  >
+                    🖨 Print / PDF
+                  </button>
+                </div>
+              </div>
               {/* ===== 策略标题和summary卡片，最顶部 ===== */}
               <h1 className="text-3xl font-bold text-gray-900">{backtest.strategyName} Strategy</h1>
               <p className="mt-1 text-gray-600 mb-6">
@@ -759,6 +815,98 @@ export default function BacktestDetails() {
 
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Market Price & Trade Markers</h2>
             <BacktestChart trades={sortedTrades} priceSeries={selectedPriceSeries} />
+          </div>
+
+          {/* Equity / cumulative P&L curve — driven from the trade rows the
+              report already returns. Shows running peak + drawdown shading
+              so users can eyeball strategy stability over time. */}
+          <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Equity Curve</h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Cumulative realized P&L across every closed trade in this backtest.
+                </p>
+              </div>
+              <div className="text-xs text-gray-500">
+                Start ${Number(backtest?.initialCapital || 0).toLocaleString("en-US")} →
+                End ${Number((backtest?.initialCapital || 0) + advancedMetrics.netProfit).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <EquityCurveChart trades={trades} initialCapital={backtest?.initialCapital} />
+          </div>
+
+          {/* Advanced risk + position-quality metrics, computed client-side from
+              the trade rows so no backend change is required. */}
+          <div className="rounded-3xl bg-white px-6 py-6 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-xl font-semibold text-gray-900">Advanced Metrics</h2>
+              <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                Derived from trade rows
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Sharpe Ratio</div>
+                <div className={`mt-1 text-2xl font-semibold ${advancedMetrics.sharpeRatio >= 1 ? "text-emerald-600" : advancedMetrics.sharpeRatio >= 0 ? "text-amber-600" : "text-rose-600"}`}>
+                  {formatRatio(advancedMetrics.sharpeRatio)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">Annualized · risk-adjusted return</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Sortino Ratio</div>
+                <div className={`mt-1 text-2xl font-semibold ${advancedMetrics.sortinoRatio >= 1 ? "text-emerald-600" : advancedMetrics.sortinoRatio >= 0 ? "text-amber-600" : "text-rose-600"}`}>
+                  {formatRatio(advancedMetrics.sortinoRatio)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">Only downside volatility penalised</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Profit Factor</div>
+                <div className={`mt-1 text-2xl font-semibold ${advancedMetrics.profitFactor >= 1.5 ? "text-emerald-600" : advancedMetrics.profitFactor >= 1 ? "text-amber-600" : "text-rose-600"}`}>
+                  {formatRatio(advancedMetrics.profitFactor)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">Gross win $ ÷ gross loss $</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Expectancy</div>
+                <div className={`mt-1 text-2xl font-semibold ${advancedMetrics.expectancy >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {advancedMetrics.expectancy >= 0 ? "+" : ""}{formatCurrency(advancedMetrics.expectancy)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">Expected $ per closed trade</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Avg Win / Avg Loss</div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatRatio(advancedMetrics.winLossRatio)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  +{formatCurrency(advancedMetrics.avgWin)} / −{formatCurrency(advancedMetrics.avgLoss)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Max Drawdown ($)</div>
+                <div className="mt-1 text-2xl font-semibold text-rose-600">
+                  −{formatCurrency(advancedMetrics.maxDrawdownAmount)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  {formatPercent(advancedMetrics.maxDrawdownPct)} from peak
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Longest Drawdown</div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatDuration(advancedMetrics.longestDrawdownMs)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">Time spent below prior peak</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 px-4 py-3">
+                <div className="text-[11px] uppercase text-gray-500">Avg Holding Time</div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatDuration(advancedMetrics.avgHoldingMs)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">BUY → matching SELL</div>
+              </div>
+            </div>
           </div>
 
           {/* Trade Summary — always tallied across ALL markets (boss requirement). When the
